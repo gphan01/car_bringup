@@ -20,7 +20,7 @@ Development happens in the F1TENTH gym simulator first; the same configs are int
 
 Host is Windows with WSL2 (Ubuntu 24.04). The simulator runs in a Docker container because
 `f1tenth_gym_ros` targets ROS 2 Foxy, which does not run on 24.04. The physical car will run
-ROS 2 Jazzy on Ubuntu 24.04 — the Pi 5 cannot run 22.04 or older because its I/O moved to the
+ROS 2 Jazzy on Ubuntu 24.04 - the Pi 5 cannot run 22.04 or older because its I/O moved to the
 RP1 southbridge, which those kernels don't support.
 
 So: Foxy in a container for the sim, Jazzy natively for real work. They never need to talk to
@@ -30,7 +30,7 @@ each other, and mixing ROS distros on one network doesn't work anyway.
 
 ### Native display via WSLg (preferred)
 
-The repo's own `docker-compose.yml` routes RViz through noVNC and a browser, which is laggy —
+The repo's own `docker-compose.yml` routes RViz through noVNC and a browser, which is laggy -
 every frame is encoded, shipped over HTTP, and decoded. WSLg already provides a display server,
 so mounting its socket into the container lets RViz open as a native Windows window with GPU
 acceleration.
@@ -53,7 +53,7 @@ Notes:
 - **No trailing `/bin/bash`.** The image sets `ENTRYPOINT ["/bin/bash"]`, so a trailing
   `/bin/bash` becomes an argument to bash and fails with
   `cannot execute binary file`.
-- **Run from the repo root**, not the nested `f1tenth_gym_ros/f1tenth_gym_ros/` package dir —
+- **Run from the repo root**, not the nested `f1tenth_gym_ros/f1tenth_gym_ros/` package dir -
   `-v .:` mounts the current directory.
 - `--rm` is omitted deliberately so apt installs and `.bashrc` edits survive. Restart later with
   `docker start -ai f1tenth_sim`.
@@ -91,21 +91,21 @@ a Python file changes nothing until you rebuild.
 Four panes. Don't Ctrl+C the first two.
 
 ```bash
-# 1 — simulator
+# 1 - simulator
 ros2 launch f1tenth_gym_ros gym_bridge_launch.py
 
-# 2 — SLAM
+# 2 - SLAM
 ros2 launch slam_toolbox online_async_launch.py \
   params_file:=/sim_ws/src/car_bringup/config/mapper_params_online_async.yaml
 
-# 3 — teleop
+# 3 - teleop
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
-# 4 — scratch (topic echo, view_frames, etc.)
+# 4 - scratch (topic echo, view_frames, etc.)
 ```
 
 Teleop keys are the `i / j / k / l` block, not WASD. `k` stops. Leave the speed multiplier at
-the default — `q`/`z` compound 10% per press and it's easy to reach absurd values.
+the default - `q`/`z` compound 10% per press and it's easy to reach absurd values.
 
 ## Required patches to f1tenth_gym_ros
 
@@ -117,7 +117,7 @@ Both live on the `odom-frame-for-slam` branch of the fork.
 
 The simulator knows ground truth and publishes the robot's position on the map directly. That's
 the answer SLAM is supposed to compute, and two publishers claiming the same transform conflict.
-After the change the sim publishes only odometry, leaving `map → odom` for slam_toolbox to own —
+After the change the sim publishes only odometry, leaving `map → odom` for slam_toolbox to own -
 which is the standard arrangement on real hardware.
 
 ### 2. Fix the scan angle fencepost
@@ -147,7 +147,7 @@ map                        ← absolute, from slam_toolbox. Accurate but jumps o
 
 Both `map` and `odom` exist because neither property is sufficient alone. Control loops need
 smooth (`odom`); goals need absolute (`map`). slam_toolbox publishes `map → odom`, which is not
-a position but a *correction* — the accumulated error in odometry.
+a position but a *correction* - the accumulated error in odometry.
 
 On real hardware: the STM32 publishes `odom → base_link` from encoder + IMU via micro-ROS,
 `robot_state_publisher` supplies the static offsets from a URDF, and slam_toolbox still owns
@@ -168,7 +168,7 @@ which doesn't exist in this sim's tree. Symptom is a flood of
 `Invalid frame ID "base_footprint" ... frame does not exist`.
 
 **RViz's Fixed Frame must name a frame that exists.** With patch 1 applied and slam_toolbox
-*not* running, `map` is absent, so RViz draws nothing — no car, no scans, RobotModel red. This
+*not* running, `map` is absent, so RViz draws nothing - no car, no scans, RobotModel red. This
 looks exactly like a frozen simulator and isn't. Either set Fixed Frame to `odom` or start
 slam_toolbox.
 
@@ -181,7 +181,7 @@ ros2 param get /slam_toolbox base_frame   # what does the node actually believe?
 ros2 run tf2_tools view_frames.py     # is the tree connected?
 ```
 
-`ros2 param get` is the one that matters most — a config file is what you intended, `param get`
+`ros2 param get` is the one that matters most - a config file is what you intended, `param get`
 is what the node loaded. When they disagree, the bug is in the loading path.
 
 **Root-owned files.** `colcon build` inside the container writes to the mounted volume as root,
@@ -203,10 +203,10 @@ Subscribed by the sim:
 |---|---|
 | `/drive` | `ackermann_msgs/AckermannDriveStamped` |
 | `/cmd_vel` | `geometry_msgs/Twist` (teleop path) |
-| `/initialpose` | RViz "2D Pose Estimate" — resets the sim |
+| `/initialpose` | RViz "2D Pose Estimate" - resets the sim |
 
 `AckermannDriveStamped` carries a **steering angle and speed**, not a twist. Nav2's controllers
-emit `Twist`, so M2 needs a conversion — which is the same bicycle-model math the STM32 will do
+emit `Twist`, so M2 needs a conversion - which is the same bicycle-model math the STM32 will do
 on the real car:
 
 ```
