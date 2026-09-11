@@ -8,13 +8,13 @@ Development happens in the F1TENTH gym simulator first; the same configs are int
 
 | Milestone | State |
 |---|---|
-| M0 — sim running, teleop driving | done |
-| M1 — SLAM building a map from scans | done |
-| M2 — Nav2 autonomous goal navigation | not started |
-| M3 — hardware sensor bring-up | waiting on parts |
-| M4 — STM32 actuation + odometry firmware | not started |
-| M5 — real-world SLAM | not started |
-| M6 — autonomy on hardware | not started |
+| M0 - sim running, teleop driving | done |
+| M1 - SLAM building a map from scans | done |
+| M2 - Nav2 autonomous goal navigation | not started |
+| M3 - hardware sensor bring-up | waiting on parts |
+| M4 - STM32 actuation + odometry firmware | not started |
+| M5 - real-world SLAM | not started |
+| M6 - autonomy on hardware | not started |
 
 ## Environment
 
