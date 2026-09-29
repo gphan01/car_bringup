@@ -20,6 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'ackermann_converter = car_bringup.ackermann_converter:main',
         ],
     },
 )
