@@ -1,221 +1,297 @@
 # car_bringup
 
-Configs, launch files, and notes for an autonomous 1/10-scale LiDAR vehicle running ROS 2.
+Configs, nodes, and notes for an autonomous 1/10-scale LiDAR car on ROS 2.
 
-Development happens in the F1TENTH gym simulator first; the same configs are intended to port to the physical car (Traxxas chassis, Raspberry Pi 5, STM32 Nucleo-F446RE, RPLIDAR C1).
+Everything is developed in the F1TENTH gym simulator first, then ported to the real car
+(Traxxas chassis, Raspberry Pi 5, STM32 Nucleo-F446RE, RPLIDAR C1).
 
 ## Status
 
-| Milestone | State |
-|---|---|
-| M0 - sim running, teleop driving | done |
-| M1 - SLAM building a map from scans | done |
-| M2 - Nav2 autonomous goal navigation | not started |
-| M3 - hardware sensor bring-up | waiting on parts |
-| M4 - STM32 actuation + odometry firmware | not started |
-| M5 - real-world SLAM | not started |
-| M6 - autonomy on hardware | not started |
+| Milestone | What "done" means | State |
+|---|---|---|
+| M0 | Sim running, drive with keyboard | done |
+| M1 | slam_toolbox builds a map from scans | done |
+| M2 | Click a goal in RViz, Nav2 drives there | in progress — converter node done |
+| M3 | Real LiDAR publishing `/scan` | LiDAR in hand |
+| M4 | STM32: PWM to ESC/servo, encoder odometry | chassis arrives Oct 2 |
+| M5 | Real-world SLAM, driving by teleop | — |
+| M6 | Autonomy on hardware | — |
 
-## Environment
+---
 
-Host is Windows with WSL2 (Ubuntu 24.04). The simulator runs in a Docker container because
-`f1tenth_gym_ros` targets ROS 2 Foxy, which does not run on 24.04. The physical car will run
-ROS 2 Jazzy on Ubuntu 24.04 - the Pi 5 cannot run 22.04 or older because its I/O moved to the
-RP1 southbridge, which those kernels don't support.
+## Quick start (normal session)
 
-So: Foxy in a container for the sim, Jazzy natively for real work. They never need to talk to
-each other, and mixing ROS distros on one network doesn't work anyway.
+1. Start **Docker Desktop** on Windows. Nothing below works without it.
+2. In WSL:
+   ```bash
+   ~/f1tenth_ws/src/car_bringup/sim.sh
+   ```
+3. Extra shells into the same container, from other WSL tabs:
+   ```bash
+   docker exec -it f1tenth_sim /bin/bash
+   ```
+4. Launch, one per pane. Don't Ctrl+C panes 1 and 2 while working.
+   ```bash
+   # 1 — simulator (opens RViz as a Windows window)
+   ros2 launch f1tenth_gym_ros gym_bridge_launch.py
 
-## Running the simulator
+   # 2 — SLAM
+   ros2 launch slam_toolbox online_async_launch.py \
+     params_file:=/sim_ws/src/car_bringup/config/mapper_params_online_async.yaml
 
-### Native display via WSLg (preferred)
+   # 3 — Twist → Ackermann converter
+   ros2 run car_bringup ackermann_converter
 
-The repo's own `docker-compose.yml` routes RViz through noVNC and a browser, which is laggy -
-every frame is encoded, shipped over HTTP, and decoded. WSLg already provides a display server,
-so mounting its socket into the container lets RViz open as a native Windows window with GPU
-acceleration.
+   # 4 — keyboard driving, routed through the converter
+   ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+     --ros-args -r cmd_vel:=cmd_vel_nav
+   ```
+5. RViz: **Fixed Frame = `map`** (only exists while slam_toolbox runs).
 
-From the `f1tenth_gym_ros` repo root:
+### First time / after the container is wiped
 
+`sim.sh` creates the container if it's missing. Then, **inside** it:
 ```bash
-docker run -it \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v /mnt/wslg:/mnt/wslg \
-  -e DISPLAY=$DISPLAY \
-  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
-  -e XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
-  -v .:/sim_ws/src/f1tenth_gym_ros \
-  --name f1tenth_sim \
-  f1tenth_gym_ros:latest
+bash /sim_ws/src/car_bringup/setup_container.sh
 ```
-
-Notes:
-- **No trailing `/bin/bash`.** The image sets `ENTRYPOINT ["/bin/bash"]`, so a trailing
-  `/bin/bash` becomes an argument to bash and fails with
-  `cannot execute binary file`.
-- **Run from the repo root**, not the nested `f1tenth_gym_ros/f1tenth_gym_ros/` package dir -
-  `-v .:` mounts the current directory.
-- `--rm` is omitted deliberately so apt installs and `.bashrc` edits survive. Restart later with
-  `docker start -ai f1tenth_sim`.
-- Check `echo $DISPLAY` in WSL first; it should print `:0`.
-
-### Fallback: noVNC
-
-`docker compose up --build`, then browse to `http://localhost:8080/vnc.html`. Works everywhere,
-but noticeably choppy.
-
-### Additional shells
-
+Then from **WSL**:
 ```bash
-docker exec -it f1tenth_sim /bin/bash
+sudo chown -R $USER:$USER ~/f1tenth_ws/src
 ```
 
-## First-time container setup
+---
 
-The image ships without these:
+## Where things run
 
-```bash
-apt update && apt install -y ros-foxy-slam-toolbox ros-foxy-tf2-tools
+| Thing | Where | Why |
+|---|---|---|
+| `ros2 …`, `colcon …`, `apt install ros-…` | container | ROS only exists there |
+| `git`, `nvim`, SSH keys | WSL | your config and keys live there |
+| `docker …` | WSL | acts on containers from the outside |
+| `sudo chown` | WSL | container creates files as root |
 
-echo "source /opt/ros/foxy/setup.bash" >> ~/.bashrc
-echo "source /sim_ws/install/local_setup.bash" >> ~/.bashrc
-
-cd /sim_ws && colcon build --symlink-install && source install/local_setup.bash
-```
-
-Use `--symlink-install`. Without it, colcon **copies** source files into `install/`, so editing
-a Python file changes nothing until you rebuild.
-
-## Launching
-
-Four panes. Don't Ctrl+C the first two.
-
-```bash
-# 1 - simulator
-ros2 launch f1tenth_gym_ros gym_bridge_launch.py
-
-# 2 - SLAM
-ros2 launch slam_toolbox online_async_launch.py \
-  params_file:=/sim_ws/src/car_bringup/config/mapper_params_online_async.yaml
-
-# 3 - teleop
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-
-# 4 - scratch (topic echo, view_frames, etc.)
-```
-
-Teleop keys are the `i / j / k / l` block, not WASD. `k` stops. Leave the speed multiplier at
-the default - `q`/`z` compound 10% per press and it's easy to reach absurd values.
-
-## Required patches to f1tenth_gym_ros
-
-Both live on the `odom-frame-for-slam` branch of the fork.
-
-### 1. Publish `odom → base_link` instead of `map → base_link`
-
-`gym_bridge.py`, lines ~292 and ~339: change `'map'` to `'odom'`.
-
-The simulator knows ground truth and publishes the robot's position on the map directly. That's
-the answer SLAM is supposed to compute, and two publishers claiming the same transform conflict.
-After the change the sim publishes only odometry, leaving `map → odom` for slam_toolbox to own -
-which is the standard arrangement on real hardware.
-
-### 2. Fix the scan angle fencepost
-
-`gym_bridge.py`, line 98:
-
-```python
-self.angle_inc = scan_fov / (scan_beams - 1)   # was: / scan_beams
-```
-
-1080 beams span 1079 increments, not 1080. Without this, slam_toolbox computes
-`(angle_max - angle_min) / angle_increment + 1 = 1081`, sees 1080 readings, and **rejects every
-scan** with `LaserRangeScan contains 1080 range readings, expected 1081`. Nothing errors loudly;
-the map simply never builds.
-
-This is an upstream bug and worth reporting.
-
-## Frames
+The mount makes one directory visible from both sides:
 
 ```
-map                        ← absolute, from slam_toolbox. Accurate but jumps on loop closure.
-└── odom                   ← from wheel odometry. Smooth but drifts.
-    └── ego_racecar/base_link
-        ├── ego_racecar/laser
-        └── wheels, hinges (static, from URDF)
+WSL:        ~/f1tenth_ws/src/          (car_bringup/, f1tenth_gym_ros/)
+container:  /sim_ws/src/               same files
 ```
 
-Both `map` and `odom` exist because neither property is sufficient alone. Control loops need
-smooth (`odom`); goals need absolute (`map`). slam_toolbox publishes `map → odom`, which is not
-a position but a *correction* - the accumulated error in odometry.
+Container-only (lost if the container is deleted): apt installs, `~/.bashrc`, `~/.tmux.conf`,
+`/sim_ws/build`, `/sim_ws/install`. That's what `setup_container.sh` restores.
 
-On real hardware: the STM32 publishes `odom → base_link` from encoder + IMU via micro-ROS,
-`robot_state_publisher` supplies the static offsets from a URDF, and slam_toolbox still owns
-`map → odom`.
+**Why a container at all:** `f1tenth_gym_ros` targets ROS 2 Foxy (Ubuntu 20.04). WSL is 24.04.
+The real car will run Jazzy on 24.04, because the Pi 5's RP1 I/O chip isn't supported by older
+kernels. So: Foxy in a container for the sim, Jazzy for the car.
 
-## Gotchas
+---
 
-**`params_file:=`, not `slam_params_file:=`.** Foxy's `online_async_launch.py` declares the
-short name. `ros2 launch` silently ignores unknown arguments, so the wrong name loads the
-default config with no error. Check what a launch file accepts with:
+## Workspace layout
 
-```bash
-ros2 launch <pkg> <file> --show-args
+```
+/sim_ws/                               WORKSPACE (colcon build from here)
+├── src/
+│   ├── f1tenth_gym_ros/               package — the simulator (forked, 2 patches)
+│   └── car_bringup/                   package — mine
+│       ├── package.xml                name + dependencies
+│       ├── setup.py                   install rules + entry_points (registers nodes)
+│       ├── config/
+│       │   ├── mapper_params_online_async.yaml
+│       │   └── nav2_params.yaml
+│       ├── car_bringup/
+│       │   └── ackermann_converter.py node
+│       ├── sim.sh
+│       └── setup_container.sh
+├── build/  install/  log/             colcon output — never edit
 ```
 
-**`base_frame` must be `ego_racecar/base_link`.** slam_toolbox ships with `base_footprint`,
-which doesn't exist in this sim's tree. Symptom is a flood of
-`Invalid frame ID "base_footprint" ... frame does not exist`.
+**Workspace → package → node.** A folder is a package once it has `package.xml` + `setup.py`.
+A node is a Python file in the inner folder. `ros2 run <pkg> <exe>` only finds it if it's
+registered in `setup.py` `entry_points` **and** the package was rebuilt afterward.
 
-**RViz's Fixed Frame must name a frame that exists.** With patch 1 applied and slam_toolbox
-*not* running, `map` is absent, so RViz draws nothing - no car, no scans, RobotModel red. This
-looks exactly like a frozen simulator and isn't. Either set Fixed Frame to `odom` or start
-slam_toolbox.
+Rebuild only after changing `setup.py` or `package.xml`. With `--symlink-install`, editing a
+`.py` file just needs a node restart.
 
-**Verify on topics, not in RViz.** A viewer showing nothing is ambiguous between "no data" and
-"can't render the data." When something looks wrong:
+---
 
-```bash
-ros2 topic echo /ego_racecar/odom     # is the car actually moving?
-ros2 param get /slam_toolbox base_frame   # what does the node actually believe?
-ros2 run tf2_tools view_frames.py     # is the tree connected?
-```
+## The converter node
 
-`ros2 param get` is the one that matters most - a config file is what you intended, `param get`
-is what the node loaded. When they disagree, the bug is in the loading path.
-
-**Root-owned files.** `colcon build` inside the container writes to the mounted volume as root,
-so `build/`, `install/`, and `__pycache__` can't be deleted from WSL without `sudo`.
-
-## Topics
-
-Published by the sim:
-
-| Topic | Type |
-|---|---|
-| `/scan` | `sensor_msgs/LaserScan` |
-| `/ego_racecar/odom` | `nav_msgs/Odometry` |
-| `/map` | `nav_msgs/OccupancyGrid` (from slam_toolbox once running) |
-
-Subscribed by the sim:
-
-| Topic | Type |
-|---|---|
-| `/drive` | `ackermann_msgs/AckermannDriveStamped` |
-| `/cmd_vel` | `geometry_msgs/Twist` (teleop path) |
-| `/initialpose` | RViz "2D Pose Estimate" - resets the sim |
-
-`AckermannDriveStamped` carries a **steering angle and speed**, not a twist. Nav2's controllers
-emit `Twist`, so M2 needs a conversion - which is the same bicycle-model math the STM32 will do
-on the real car:
+`car_bringup/ackermann_converter.py` — subscribes `/cmd_vel_nav` (`Twist`), publishes `/drive`
+(`AckermannDriveStamped`).
 
 ```
 steering_angle = atan(wheelbase * angular.z / linear.x)
 ```
 
-## Next
+A twist says "rotate at ω while moving at v." A car can only do that by steering to an angle
+that depends on its length — the bicycle model. Guarded for v ≈ 0 (a stopped car can't turn)
+and clamped to `max_steering` (the wheels physically stop).
 
-M2: Nav2 with Regulated Pure Pursuit (works with Ackermann; the default DWB controller assumes
-differential drive and will command in-place rotations a car can't execute) and a
-kinematically-feasible global planner such as Smac Hybrid-A\* that respects minimum turning
-radius.
+`wheelbase` (0.3302 m) and `max_steering` (0.4189 rad) are **parameters**, set for the sim car.
+On the Traxxas, measure and override them — no code change.
+
+**Why `/cmd_vel_nav` and not `/cmd_vel`:** the sim bridge also subscribes to `/cmd_vel` and does
+its own crude conversion (steering jumps to ±0.3, no math). Listening on a separate topic keeps
+the two from fighting. Teleop and Nav2 get remapped to `/cmd_vel_nav`.
+
+```
+teleop / Nav2  →  /cmd_vel_nav  →  ackermann_converter  →  /drive  →  sim (later: STM32)
+```
+
+---
+
+## Required patches to f1tenth_gym_ros
+
+On branch `odom-fram-for-slam` of `github.com/gphan01/f1tenth_gym_ros`.
+A fresh upstream clone does **not** have these.
+
+### 1. Publish `odom → base_link`, not `map → base_link`
+
+`gym_bridge.py`, lines ~292 and ~339: `'map'` → `'odom'`.
+
+The sim knows ground truth and publishes the car's map position directly — which is exactly
+what SLAM is supposed to compute. After the patch the sim only publishes odometry, and
+slam_toolbox owns `map → odom`, the same arrangement as the real car.
+
+**Side effect:** with this patch, `map` only exists while slam_toolbox is running.
+
+### 2. Scan angle fencepost
+
+`gym_bridge.py`, line 98:
+```python
+self.angle_inc = scan_fov / (scan_beams - 1)   # upstream: / scan_beams
+```
+
+1080 beams span 1079 gaps. Without this, slam_toolbox expects 1081 readings, gets 1080, and
+**silently rejects every scan** — map never builds. Log line:
+`LaserRangeScan contains 1080 range readings, expected 1081`. Upstream bug; worth reporting.
+
+---
+
+## Frames
+
+```
+map                          absolute; from slam_toolbox; jumps on loop closure
+└── odom                     from odometry; smooth; drifts
+    └── ego_racecar/base_link
+        ├── ego_racecar/laser
+        └── wheels, hinges   static offsets from the URDF
+```
+
+- **Frame** = a coordinate system. **Transform** = how two frames relate (translation + rotation).
+  Each frame stores only its link to its parent; TF chains them on request.
+- `map → odom` is not a position — it's the **correction** for accumulated odometry drift.
+- Controllers use `odom` (smooth). Goals use `map` (absolute).
+- `ego_racecar/` is a namespace so two sim cars don't collide. The real car is plain `base_link`.
+
+---
+
+## Gotchas that cost real time
+
+**RViz Fixed Frame must be a frame that exists.** Symptoms of a wrong one look exactly like a
+frozen simulator: car won't move, no lasers, RobotModel red, white box instead of the car.
+The car was driving the whole time. Check Global Status first. Use `odom` if slam_toolbox isn't
+running.
+
+**Verify on topics before debugging the system.** RViz showing nothing is ambiguous between
+"no data" and "can't draw the data."
+```bash
+ros2 topic echo /ego_racecar/odom           # is the car actually moving?
+ros2 node list                              # is the node actually alive?
+ros2 param get /slam_toolbox base_frame     # what did the node actually load?
+ros2 run tf2_tools view_frames.py           # is the tree connected?
+ros2 topic info /drive --verbose            # who publishes / subscribes?
+```
+
+**Walk the chain one link at a time.** Converter debugging went: `/cmd_vel_nav` has data? →
+`/drive` has data? → node listed? → read its traceback.
+
+**Foxy's slam_toolbox takes `params_file:=`, not `slam_params_file:=`.** `ros2 launch` silently
+ignores unknown arguments and loads the default config. Check with:
+```bash
+ros2 launch <pkg> <launch_file> --show-args
+```
+
+**`base_frame: ego_racecar/base_link`.** slam_toolbox ships with `base_footprint`, which
+doesn't exist here. Symptom: `Invalid frame ID "base_footprint" … does not exist`.
+
+**Source every new shell.** `ros2: command not found` or `package not found` almost always means
+unsourced, not broken. `setup_container.sh` puts it in `.bashrc`.
+
+**Docker image ≠ container.** `f1tenth_gym_ros:latest` is the image (template).
+`f1tenth_sim` is the container (running instance). `docker start` wants the container name.
+`docker ps -a` lists containers.
+
+**No trailing `/bin/bash` on `docker run`.** The image's ENTRYPOINT is already bash; the extra
+one becomes an argument and fails with `cannot execute binary file`.
+
+**`--rm` deletes the container on exit.** That's how the container vanished once.
+
+**Root-owned files.** Anything created in `/sim_ws/src` from the container is owned by root →
+read-only from WSL. Fix: `sudo chown -R $USER:$USER ~/f1tenth_ws/src`.
+
+**Don't run git in the container.** It refuses (`dubious ownership`), and forcing it leaves
+root-owned files in `.git/`.
+
+**`git checkout <ref> -- <file>` overwrites uncommitted work with no undo.** That's how the angle
+fix got lost once. Commit before experimenting, or use `git stash`.
+
+**Don't crank teleop speed.** `q`/`z` compound 10% per press. At 36 m/s the physics diverged
+(odom showed `1e-139` and `9516 rad/s`) and the sim stayed broken until restart. Keep defaults.
+
+**`git stash` only touches uncommitted changes.** Stashing to "test the original" does nothing
+if your edits are already committed — check out the base file instead.
+
+**Python only reports errors when the line runs.** Typos in the converter surfaced only on the
+first message. `pyflakes <file>.py` catches undefined names before running.
+
+---
+
+## Topics
+
+| Topic | Type | Who |
+|---|---|---|
+| `/scan` | `sensor_msgs/LaserScan` | sim → slam_toolbox, RViz |
+| `/ego_racecar/odom` | `nav_msgs/Odometry` | sim |
+| `/map` | `nav_msgs/OccupancyGrid` | slam_toolbox |
+| `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | sim, slam_toolbox |
+| `/cmd_vel_nav` | `geometry_msgs/Twist` | teleop / Nav2 → converter |
+| `/drive` | `ackermann_msgs/AckermannDriveStamped` | converter → sim |
+| `/cmd_vel` | `geometry_msgs/Twist` | sim's crude built-in path — unused |
+| `/initialpose` | RViz "2D Pose Estimate" | resets the sim |
+
+Teleop keys: `i` forward, `,` back, `j`/`l` turn, `u`/`o` forward+turn, `k` stop.
+The teleop terminal needs focus.
+
+---
+
+## Next: rest of M2
+
+1. Check the Ackermann plugins exist in Foxy:
+   ```bash
+   ros2 pkg list | grep -i "smac\|regulated"
+   ```
+2. Edit `config/nav2_params.yaml` (commit the stock version first so diffs are readable):
+   - every `base_link` → `ego_racecar/base_link`; `odom_topic: /ego_racecar/odom`
+   - controller: DWB → **Regulated Pure Pursuit** (DWB assumes the robot can spin in place)
+   - planner: NavFn → **Smac Hybrid-A\***, `minimum_turning_radius ≈ 0.75`
+     (`wheelbase / tan(max_steer)` = 0.33 / tan(0.419))
+   - costmaps: `robot_radius` → `footprint` rectangle, ~0.58 × 0.31 m
+   - remove `spin` from recoveries — a car can't turn in place
+   - `use_sim_time: true` everywhere
+3. Launch **only** the navigation nodes (not `bringup_launch.py`, which starts AMCL + map_server
+   and fights slam_toolbox), with the controller's `/cmd_vel` remapped to `/cmd_vel_nav`.
+4. RViz **2D Goal Pose** → car drives there.
+
+Then: a launch file in `launch/` that starts all of the above with one command.
+
+## Measurements to take when the Traxxas arrives
+
+For the URDF and converter parameters. `base_link` = center of the rear axle, on the ground.
+
+- [ ] Wheelbase (front axle to rear axle)
+- [ ] Track width
+- [ ] Max steering angle (full lock)
+- [ ] Overall length and width (Nav2 footprint)
+- [ ] LiDAR mount offset from `base_link` (x, y, z) once mounted — level and rigid matter more
+      than millimeters
