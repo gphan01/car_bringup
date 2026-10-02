@@ -11,9 +11,9 @@ Everything is developed in the F1TENTH gym simulator first, then ported to the r
 |---|---|---|
 | M0 | Sim running, drive with keyboard | done |
 | M1 | slam_toolbox builds a map from scans | done |
-| M2 | Click a goal in RViz, Nav2 drives there | in progress — converter node done |
+| M2 | Click a goal in RViz, Nav2 drives there | in progress — converter done, SLAM healthy, Nav2 config next |
 | M3 | Real LiDAR publishing `/scan` | LiDAR in hand |
-| M4 | STM32: PWM to ESC/servo, encoder odometry | chassis arrives Oct 2 |
+| M4 | STM32: PWM to ESC/servo, encoder odometry | chassis arrived |
 | M5 | Real-world SLAM, driving by teleop | — |
 | M6 | Autonomy on hardware | — |
 
@@ -24,12 +24,19 @@ Everything is developed in the F1TENTH gym simulator first, then ported to the r
 1. Start **Docker Desktop** on Windows. Nothing below works without it.
 2. In WSL:
    ```bash
-   ~/f1tenth_ws/src/car_bringup/sim.sh
+   sim        # alias for ~/f1tenth_ws/src/car_bringup/sim.sh
    ```
 3. Extra shells into the same container, from other WSL tabs:
    ```bash
-   docker exec -it f1tenth_sim /bin/bash
+   simsh      # alias for docker exec -it f1tenth_sim /bin/bash
    ```
+   Aliases, once, in WSL:
+   ```bash
+   echo "alias sim='~/f1tenth_ws/src/car_bringup/sim.sh'" >> ~/.bashrc
+   echo "alias simsh='docker exec -it f1tenth_sim /bin/bash'" >> ~/.bashrc
+   ```
+   Confirm the sim patches are checked out:
+   `git -C ~/f1tenth_ws/src/f1tenth_gym_ros branch --show-current` → `slam-fixes`
 4. Launch, one per pane. Don't Ctrl+C panes 1 and 2 while working.
    ```bash
    # 1 — simulator (opens RViz as a Windows window)
@@ -37,7 +44,8 @@ Everything is developed in the F1TENTH gym simulator first, then ported to the r
 
    # 2 — SLAM
    ros2 launch slam_toolbox online_async_launch.py \
-     params_file:=/sim_ws/src/car_bringup/config/mapper_params_online_async.yaml
+     params_file:=/sim_ws/src/car_bringup/config/mapper_params_online_async.yaml \
+     use_sim_time:=false
 
    # 3 — Twist → Ackermann converter
    ros2 run car_bringup ackermann_converter
@@ -91,7 +99,7 @@ kernels. So: Foxy in a container for the sim, Jazzy for the car.
 ```
 /sim_ws/                               WORKSPACE (colcon build from here)
 ├── src/
-│   ├── f1tenth_gym_ros/               package — the simulator (forked, 2 patches)
+│   ├── f1tenth_gym_ros/               package — the simulator (forked, 3 patches)
 │   └── car_bringup/                   package — mine
 │       ├── package.xml                name + dependencies
 │       ├── setup.py                   install rules + entry_points (registers nodes)
@@ -142,8 +150,16 @@ teleop / Nav2  →  /cmd_vel_nav  →  ackermann_converter  →  /drive  →  si
 
 ## Required patches to f1tenth_gym_ros
 
-On branch `odom-fram-for-slam` of `github.com/gphan01/f1tenth_gym_ros`.
-A fresh upstream clone does **not** have these.
+On branch **`slam-fixes`** of `github.com/gphan01/f1tenth_gym_ros`.
+A fresh upstream clone does **not** have these. `main` stays identical to F1TENTH's `main`
+so upstream updates pull cleanly; rebase `slam-fixes` on top when needed.
+
+Remotes live in the clone's `.git/config`, so a fresh clone forgets the fork. After re-cloning:
+```bash
+git remote add fork git@github.com:gphan01/f1tenth_gym_ros.git
+git fetch fork
+git checkout -b slam-fixes fork/slam-fixes
+```
 
 ### 1. Publish `odom → base_link`, not `map → base_link`
 
@@ -166,6 +182,28 @@ self.angle_inc = scan_fov / (scan_beams - 1)   # upstream: / scan_beams
 **silently rejects every scan** — map never builds. Log line:
 `LaserRangeScan contains 1080 range readings, expected 1081`. Upstream bug; worth reporting.
 
+### 3. Don't launch the prefab map server
+
+`launch/gym_bridge_launch.py`: comment out the two lines that register the nodes.
+```python
+    # ld.add_action(nav_lifecycle_node)   # prefab map; slam_toolbox owns /map
+    # ld.add_action(map_server_node)
+```
+
+`map_server` publishes the PNG track map on `/map`, latched. With slam_toolbox also publishing
+`/map`, RViz blends the two and you get a doubled, rotated corridor. Same root problem as patch
+1: the sim handing out ground truth that SLAM is supposed to produce.
+
+`lifecycle_manager_localization` only exists to activate `map_server` (Nav2 nodes are
+lifecycle nodes — they start idle and must be configured + activated).
+
+After editing any patch, if behavior doesn't change, the build is stale:
+```bash
+cd /sim_ws
+rm -rf build/f1tenth_gym_ros install/f1tenth_gym_ros
+colcon build --symlink-install --packages-select f1tenth_gym_ros
+```
+
 ---
 
 ## Frames
@@ -187,6 +225,28 @@ map                          absolute; from slam_toolbox; jumps on loop closure
 ---
 
 ## Gotchas that cost real time
+
+**This sim publishes no `/clock` → `use_sim_time:=false` on every launch.** With it `true`,
+nodes read time from `/clock`; nobody publishes it, so their clock sits at 0 while scans are
+stamped with wall time. slam_toolbox then drops every scan:
+`Message Filter dropping message: frame 'ego_racecar/laser' … for reason 'Unknown'`.
+Diagnosis: `view_frames` showed slam's `map → odom` stamped `0.2` vs sim transforms at
+~`1.79e9`; `ros2 topic info /clock` showed 0 publishers. Pass it as a **launch argument** —
+Foxy's launch files apply `{'use_sim_time': …}` after the YAML, so a YAML value gets
+overridden. Same for Nav2. (`/clock` appearing in `ros2 topic list` means nothing — the list
+includes topics that only have subscribers.)
+
+**RViz process runs but no window appears → `wsl --shutdown` from PowerShell, then restart.**
+The container mounts WSLg's display socket at creation; after sleep/reboot WSLg makes a new
+one and the container points at a dead socket. Test WSLg alone with `xeyes` in plain WSL.
+
+**A few "dropping message" lines are normal.** A scan that arrives milliseconds before its
+transform gets dropped and the next one is used. Only a continuous flood with no map growth
+is a problem. Judge by whether the map builds, not by the log.
+
+**When something that worked stops working, list what changed since.** The M2 regressions all
+traced to the re-clone, the container rebuild, the mount change, and the config move —
+not to new bugs.
 
 **RViz Fixed Frame must be a frame that exists.** Symptoms of a wrong one look exactly like a
 frozen simulator: car won't move, no lasers, RobotModel red, white box instead of the car.
@@ -278,14 +338,17 @@ The teleop terminal needs focus.
      (`wheelbase / tan(max_steer)` = 0.33 / tan(0.419))
    - costmaps: `robot_radius` → `footprint` rectangle, ~0.58 × 0.31 m
    - remove `spin` from recoveries — a car can't turn in place
-   - `use_sim_time: true` everywhere
+   - `use_sim_time: false` everywhere, and `use_sim_time:=false` at launch (no `/clock`)
 3. Launch **only** the navigation nodes (not `bringup_launch.py`, which starts AMCL + map_server
    and fights slam_toolbox), with the controller's `/cmd_vel` remapped to `/cmd_vel_nav`.
+   If Nav2 starts but does nothing, check a node isn't stuck unactivated:
+   `ros2 lifecycle get /controller_server`.
 4. RViz **2D Goal Pose** → car drives there.
 
-Then: a launch file in `launch/` that starts all of the above with one command.
+Then: a launch file in `launch/` that starts all of the above with one command — and sets
+`use_sim_time` explicitly, so no hidden launch-file defaults.
 
-## Measurements to take when the Traxxas arrives
+## Traxxas measurements (chassis is here)
 
 For the URDF and converter parameters. `base_link` = center of the rear axle, on the ground.
 
