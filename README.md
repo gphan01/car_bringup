@@ -1,7 +1,7 @@
 # car_bringup
 
 Autonomous 1/10-scale LiDAR car on ROS 2: SLAM-built maps, Nav2 path planning, and Ackermann
-control. Developed in the F1TENTH gym simulator, then ported to hardware — Traxxas chassis,
+control. Developed in the F1TENTH gym simulator, then ported to hardware - Traxxas chassis,
 Raspberry Pi 5, STM32 Nucleo-F446RE, Slamtec RPLIDAR C1.
 
 ## Status
@@ -10,11 +10,11 @@ Raspberry Pi 5, STM32 Nucleo-F446RE, Slamtec RPLIDAR C1.
 |---|---|---|
 | M0 | Sim running, drive with keyboard | done |
 | M1 | slam_toolbox builds a map from scans | done |
-| M2 | Click a goal in RViz, Nav2 drives there | **done** — stalls on tight turnaround loops ([known issues](docs/nav2.md#known-issues)) |
+| M2 | Click a goal in RViz, Nav2 drives there | **done** - stalls on tight turnaround loops ([known issues](docs/nav2.md#known-issues)) |
 | M3 | Real LiDAR publishing `/scan` on the Pi, handheld SLAM map | **done** ([hardware](docs/hardware.md)) |
 | M4 | STM32: PWM to ESC/servo, wheel odometry, IMU, power harness | **next** |
-| M5 | Real-world SLAM, driving by teleop | — |
-| M6 | Autonomy on hardware | — |
+| M5 | Real-world SLAM, driving by teleop | - |
+| M6 | Autonomy on hardware | - |
 
 <img src="docs/images/room_handheld.png" width="400" alt="Handheld SLAM map from the real RPLIDAR C1">
 
@@ -30,7 +30,7 @@ Raspberry Pi 5, STM32 Nucleo-F446RE, Slamtec RPLIDAR C1.
    └──────────────────── sim bridge (now) / RPLIDAR + STM32 (hardware) ◄─────────┘
 ```
 
-Everything above the bottom line is identical in sim and on the car — only the source of
+Everything above the bottom line is identical in sim and on the car - only the source of
 `/scan` and odometry, and the consumer of `/drive`, change. Details:
 [architecture](docs/architecture.md).
 
@@ -54,14 +54,14 @@ Everything above the bottom line is identical in sim and on the car — only the
    Starts sim + RViz, slam_toolbox, the converter, then Nav2 after 8 s (so `map` exists first).
    Wait for `Managed nodes are active`. **Ctrl+C stops all of it.**
 
-   Optional, separate pane — manual driving (stop it before sending Nav2 goals; both publish
+   Optional, separate pane - manual driving (stop it before sending Nav2 goals; both publish
    to `/cmd_vel_nav` and fight):
    ```bash
    ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=cmd_vel_nav
    ```
 5. RViz: **Fixed Frame = `map`**. Useful displays (Add → By topic): `/plan` (Path),
    `/local_costmap/costmap` and `/global_costmap/costmap` (Map, color scheme `costmap`).
-6. Send goals with **2D Goal Pose**. Never use **2D Pose Estimate** while SLAM runs — it
+6. Send goals with **2D Goal Pose**. Never use **2D Pose Estimate** while SLAM runs - it
    teleports the sim car and SLAM stitches the map at the wrong pose (doubled corridors).
    Drag the arrow roughly along the car's current heading.
 
