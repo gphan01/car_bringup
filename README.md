@@ -11,10 +11,14 @@ Raspberry Pi 5, STM32 Nucleo-F446RE, Slamtec RPLIDAR C1.
 | M0 | Sim running, drive with keyboard | done |
 | M1 | slam_toolbox builds a map from scans | done |
 | M2 | Click a goal in RViz, Nav2 drives there | **done** — stalls on tight turnaround loops ([known issues](docs/nav2.md#known-issues)) |
-| M3 | Real LiDAR publishing `/scan` | **next** — LiDAR in hand |
-| M4 | STM32: PWM to ESC/servo, encoder odometry | chassis arrived |
+| M3 | Real LiDAR publishing `/scan` on the Pi, handheld SLAM map | **done** ([hardware](docs/hardware.md)) |
+| M4 | STM32: PWM to ESC/servo, wheel odometry, IMU, power harness | **next** |
 | M5 | Real-world SLAM, driving by teleop | — |
 | M6 | Autonomy on hardware | — |
+
+<img src="docs/images/room_handheld.png" width="400" alt="Handheld SLAM map from the real RPLIDAR C1">
+
+*M3: first map from the real LiDAR, carried by hand (no odometry yet, hence the doubled room).*
 
 ## How it fits together
 
@@ -73,7 +77,7 @@ Clean reset when things get confusing: `docker restart f1tenth_sim` from WSL.
 | [Sim patches](docs/sim-patches.md) | the three `f1tenth_gym_ros` fixes and why |
 | [Nav2](docs/nav2.md) | config changes for Ackermann, known issues, tuning |
 | [Troubleshooting](docs/troubleshooting.md) | symptom → cause → fix |
-| [Hardware](docs/hardware.md) | M3 onward, Traxxas measurements |
+| [Hardware](docs/hardware.md) | Pi 5 + Jazzy setup, LiDAR, handheld SLAM, power, M4 plan |
 
 ## Repo layout
 
@@ -82,7 +86,8 @@ car_bringup/
 ├── car_bringup/ackermann_converter.py   Twist → AckermannDriveStamped node
 ├── config/        slam_toolbox + Nav2 params
 ├── launch/        sim_bringup_launch.py, nav2_launch.py
-├── docs/
+├── maps/          saved maps (.pgm + .yaml)
+├── docs/          (+ docs/images/)
 ├── sim.sh         start/create the sim container
 └── setup_container.sh
 ```
