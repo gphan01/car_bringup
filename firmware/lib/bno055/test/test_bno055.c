@@ -116,6 +116,29 @@ static void test_read_calib(void)
     assert(c.mag == 3U);
 }
 
+static void test_read_null_args(void)
+{
+    bno055_vec3_t g;
+
+    fake_i2c_t f;
+    bno055_t dev =  make_dev(&f);
+
+    assert(bno055_read_gyro(NULL, &g) == BNO055_ERR_ARG);
+    assert(bno055_read_gyro(&dev, NULL) == BNO055_ERR_ARG);
+
+    bno055_vec3_t a;
+    assert(bno055_read_accel(NULL, &a) == BNO055_ERR_ARG);
+    assert(bno055_read_accel(&dev, NULL) == BNO055_ERR_ARG);
+
+    bno055_quat_t q;
+    assert(bno055_read_quat(NULL, &q) == BNO055_ERR_ARG);
+    assert(bno055_read_quat(&dev, NULL) == BNO055_ERR_ARG);
+
+    bno055_calib_t c;
+    assert(bno055_read_calib(NULL, &c) == BNO055_ERR_ARG);
+    assert(bno055_read_calib(&dev, NULL) == BNO055_ERR_ARG);
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -123,6 +146,8 @@ int main(void)
     test_read_quat_scaling();
     test_le16_sign_extremes();
     test_read_calib();
+
+    test_read_null_arg();
 
     printf("all tests passed\n");
     return 0;
