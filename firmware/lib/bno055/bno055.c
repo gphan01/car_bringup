@@ -22,13 +22,19 @@ enum {
     VAL_MODE_CONFIG         = 0x00,
     VAL_MODE_IMU            = 0x08,
     VAL_UNIT_SEL_RAD_MS2        = 0x02,
-    VAL_UNIT_TRIGGER_EXT_CLK    = 0x80,
+    VAL_SYS_TRIGGER_EXT_CLK    = 0x80,
 };
 
 enum {
     DELAY_TO_CONFIG_MS = 19,
     DELAY_TO_OPMODE_MS = 7,
 };
+
+// Scaling factors 
+static const float GYR_LSB_PER_RAD_S = 900.0f;
+static const float ACC_LSB_PER_MS2 = 100.0f;
+static const float QUA_LSB_PER_UNIT = 16384.0f;
+
 
 static bno055_status_t read_regs(const bno055_t *dev, uint8_t reg, uint8_t *buf, uint16_t len)
 {
@@ -62,12 +68,12 @@ static bno055_status_t write_reg8(const bno055_t *dev, uint8_t reg, uint8_t val)
 
 static bno055_status_t set_mode(const bno055_t *dev, uint8_t mode)
 {
-    bno055_status_t status;
+    bno055_status_t st;
     
-    status = write_reg8(dev, REG_OPR_MODE, mode);
-    if (status != BNO055_OK) 
+    st = write_reg8(dev, REG_OPR_MODE, mode);
+    if (st != BNO055_OK) 
     {
-        return BNO055_ERR_BUS;
+        return st;
     }
 
     switch (mode){ 
@@ -79,8 +85,59 @@ static bno055_status_t set_mode(const bno055_t *dev, uint8_t mode)
         break;
     }
 
-    return status;
+    return st;
 }
+
+/*
+ * Read a 16-bit value that is stored little endian
+ */
+static int16_t le16(const uint8_t *p)
+{
+    return (int16_t)((uint16_t)p[1] << 8 | p[0]);
+}
+
+bno055_status_t bno055_read_gyro(const bno055_t *dev, bno055_vec3_t *out)
+{
+    if (!dev || !out) return BNO055_ERR_ARG; 
+
+    uint8_t raw[6];
+
+    bno055_status_t st = read_regs(dev, REG_GYR_DATA, raw, sizeof(raw));
+
+    if (st != BNO055_OK)
+    {
+        return st;
+    }
+
+    out->x = le16(&raw[0]) / GYR_LSB_PER_RAD_S;
+
+    out->y = le16(&raw[2]) / GYR_LSB_PER_RAD_S;
+
+    out->z = le16(&raw[4]) / GYR_LSB_PER_RAD_S;
+    return st;
+}
+
+bno055_status_t bno055_read_accel(const bno055_t *dev, bno055_vec3_t *out)
+{
+    if (!dev || !out) return BNO055_ERR_ARG; 
+
+    uint8_t raw[6];
+
+    bno055_status_t st = read_regs(dev, REG_ACC_DATA, raw, sizeof(raw));
+
+    if (st != BNO055_OK)
+    {
+        return st;
+    }
+
+    out->x = le16(&raw[0]) / ACC_LSB_PER_MS2;
+
+    out->y = le16(&raw[2]) / ACC_LSB_PER_MS2;
+
+    out->z = le16(&raw[4]) / ACC_LSB_PER_MS2;
+    return st;
+}
+
 
 
 
