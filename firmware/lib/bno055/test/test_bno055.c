@@ -87,7 +87,7 @@ static void test_le16_sign_extremes(void)
     assert(bno055_read_quat(&dev, &q) == BNO055_OK);
     assert(q.w == -2.0f);
     assert(q.x == 32767/16384.0f);
-    assert(q.y ==  0.000061f);
+    assert(q.y ==  1/16384.0f);
     assert(q.z ==  -1/16384.0f); 
 }
 

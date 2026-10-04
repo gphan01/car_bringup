@@ -37,3 +37,8 @@ int fake_i2c_write(void *ctx, uint8_t reg, const uint8_t *buf, uint16_t len)
     
     return 0;
 }
+
+void fake_i2c_delay(uint32_t ms)
+{
+    (void)ms;
+}
