@@ -139,6 +139,22 @@ static void test_read_null_args(void)
     assert(bno055_read_calib(&dev, NULL) == BNO055_ERR_ARG);
 }
 
+static void test_read_bus_error(void)
+{
+    fake_i2c_t f; 
+    
+    bno055_t dev = make_dev(&f);
+    f.fail_reads = 1;
+
+    bno055_vec3_t g = { 123.0f, 123.0f, 123.0f};
+
+    assert(bno055_read_gyro(&dev, &g) == BNO055_ERR_BUS);
+
+    bno055_calib_t c = {  0xAA, 0xAA, 0xAA, 0xAA};
+
+    assert(bno055_read_calib(&dev, &c) == BNO055_ERR_BUS);
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -147,8 +163,9 @@ int main(void)
     test_le16_sign_extremes();
     test_read_calib();
 
-    test_read_null_arg();
+    test_read_null_args();
+    test_read_bus_error();
 
-    printf("all tests passed\n");
+    printf("All tests passed\n");
     return 0;
 }

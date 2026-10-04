@@ -6,6 +6,7 @@
 typedef struct
 {
     uint8_t regs[256];
+    int fail_reads;
 } fake_i2c_t;
 
 
