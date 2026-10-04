@@ -152,16 +152,37 @@ bno055_status_t bno055_read_quat(const bno055_t *dev, bno055_quat_t *out)
         return st;
     }
 
-    out->x = le16(&raw[0]) / ACC_LSB_PER_MS2;
+    out->w = le16(&raw[0]) / QUA_LSB_PER_UNIT;
     
-    out->x = le16(&raw[2]) / ACC_LSB_PER_MS2;
+    out->x = le16(&raw[2]) / QUA_LSB_PER_UNIT;
 
-    out->y = le16(&raw[4]) / ACC_LSB_PER_MS2;
+    out->y = le16(&raw[4]) / QUA_LSB_PER_UNIT;
 
-    out->z = le16(&raw[6]) / ACC_LSB_PER_MS2;
+    out->z = le16(&raw[6]) / QUA_LSB_PER_UNIT;
     return st;
 }
 
+
+bno055_status_t bno055_read_calib(const bno055_t *dev, bno055_calib_t *out)
+{
+    if (!dev || !out) return BNO055_ERR_ARG;
+
+    uint8_t buf;
+
+    bno055_status_t st = read_regs(dev, REG_CALIB_STAT, &buf, sizeof(buf));
+
+    if (st != BNO055_OK)
+    {
+        return st;
+    }
+
+    out->sys = (buf >> 6) & 0x03;
+    out->gyr = (buf >> 4) & 0x03;
+    out->acc = (buf >> 2) & 0x03;
+    out->mag = (buf >> 0) & 0x03;
+    
+    return st;
+}
 
 
 
