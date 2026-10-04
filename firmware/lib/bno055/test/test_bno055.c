@@ -71,3 +71,22 @@ static void test_read_quat_scaling(void)
     assert(q.z ==  0.125f); 
 }
 
+static void test_le16_sign_extremes(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+    
+    /* w = -32768 x = -8192,  y = 1 z = -1, LSB first */
+    f.regs[0x20] =  0x00; f.regs[0x21] = 0x80;
+    f.regs[0x22] =  0xFF; f.regs[0x23] = 0x7F;
+    f.regs[0x24] =  0x01; f.regs[0x25] = 0x00;
+    f.regs[0x26] =  0xFF; f.regs[0x27] = 0xFF;
+
+    bno055_quat_t q;
+    assert(bno055_read_quat(&dev, &q) == BNO055_OK);
+    assert(q.w == -2.0f);
+    assert(q.x == 32767/16384.0f);
+    assert(q.y ==  0.000061f);
+    assert(q.z ==  -1/16384.0f); 
+}
+
