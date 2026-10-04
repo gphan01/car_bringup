@@ -51,3 +51,23 @@ static void test_read_accel_scaling(void)
     assert(a.y == -2.5f);
     assert(fabsf(a.z - 9.81f) < 1e-4f);
 }
+
+static void test_read_quat_scaling(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+    
+    /* w = 16384 x = -8192,  y = 4096 z = 0, LSB first */
+    f.regs[0x20] =  0x00; f.regs[0x21] = 0x40;
+    f.regs[0x22] =  0x00; f.regs[0x23] = 0xE0;
+    f.regs[0x24] =  0x00; f.regs[0x25] = 0x10;
+    f.regs[0x26] =  0x00; f.regs[0x27] = 0x08;
+
+    bno055_quat_t q;
+    assert(bno055_read_quat(&dev, &q) == BNO055_OK);
+    assert(q.w == 1.0f);
+    assert(q.x == -0.5f);
+    assert(q.y ==  0.25f);
+    assert(q.z ==  0.125f); 
+}
+
