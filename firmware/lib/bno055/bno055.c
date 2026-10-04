@@ -185,6 +185,39 @@ bno055_status_t bno055_read_calib(const bno055_t *dev, bno055_calib_t *out)
 }
 
 
+bno055_status_t bno055_read_offsets(const bno055_t *dev, bno055_offsets_t *out)
+{
+    if(!dev || !out) return BNO055_ERR_ARG;
+
+    bno055_status_t st = set_mode(dev, VAL_MODE_CONFIG);
+
+    if (st != BNO055_OK)
+    {
+        return st;
+    }
+
+    bno055_offsets_t tmp;
+
+    st = read_regs(dev, REG_ACC_OFFSETS_X_LSB, tmp.raw, sizeof(tmp.raw));
+    
+    bno055_status_t st2 = set_mode(dev, VAL_MODE_IMU);
+
+    if (st != BNO055_OK)
+    {
+        return st;
+    }
+
+   if (st2 != BNO055_OK)
+    {
+        return st2;
+    }
+
+    *out = tmp;
+
+    return BNO055_OK;
+}
+
+
 
 
 
