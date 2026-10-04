@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include <assert.h>
+#include <stdio.h>
 
 static bno055_t make_dev(fake_i2c_t *f)
 {
@@ -90,3 +91,39 @@ static void test_le16_sign_extremes(void)
     assert(q.z ==  -1/16384.0f); 
 }
 
+static void test_read_calib(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+
+    /* Case 1: sys = 3, gyr = 2, acc = 1, mag = 0 */
+    f.regs[0x35] = 0xE4;
+    bno055_calib_t c;
+    
+    assert(bno055_read_calib(&dev, &c) == BNO055_OK);
+    assert(c.sys == 3U);
+    assert(c.gyr == 2U);
+    assert(c.acc == 1U);
+    assert(c.mag == 0U);
+
+    f.regs[0x35] = 0x1B;
+
+    /* Case 2: sys = 0, gyr = 1, acc = 2, mag = 3 */
+    assert(bno055_read_calib(&dev, &c) == BNO055_OK);
+    assert(c.sys == 0U);
+    assert(c.gyr == 1U);
+    assert(c.acc == 2U);
+    assert(c.mag == 3U);
+}
+
+int main(void)
+{
+    test_read_gyro_scaling();
+    test_read_accel_scaling();
+    test_read_quat_scaling();
+    test_le16_sign_extremes();
+    test_read_calib();
+
+    printf("all tests passed\n");
+    return 0;
+}
