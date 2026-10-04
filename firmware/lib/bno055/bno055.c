@@ -139,6 +139,28 @@ bno055_status_t bno055_read_accel(const bno055_t *dev, bno055_vec3_t *out)
 }
 
 
+bno055_status_t bno055_read_quat(const bno055_t *dev, bno055_quat_t *out)
+{
+    if (!dev || !out) return BNO055_ERR_ARG; 
+
+    uint8_t raw[8];
+
+    bno055_status_t st = read_regs(dev, REG_QUA_DATA, raw, sizeof(raw));
+
+    if (st != BNO055_OK)
+    {
+        return st;
+    }
+
+    out->x = le16(&raw[0]) / ACC_LSB_PER_MS2;
+    
+    out->x = le16(&raw[2]) / ACC_LSB_PER_MS2;
+
+    out->y = le16(&raw[4]) / ACC_LSB_PER_MS2;
+
+    out->z = le16(&raw[6]) / ACC_LSB_PER_MS2;
+    return st;
+}
 
 
 
