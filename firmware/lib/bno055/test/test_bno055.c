@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 static bno055_t make_dev(fake_i2c_t *f)
 {
@@ -155,6 +156,82 @@ static void test_read_bus_error(void)
     assert(bno055_read_calib(&dev, &c) == BNO055_ERR_BUS);
 }
 
+static void test_read_offsets_data(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+
+    for (size_t i = 0; i < 22; i++)
+    {
+        f.regs[0x55 + i] = i + 1;
+    }
+
+    bno055_offsets_t out;
+    
+    assert(bno055_read_offsets(&dev, &out) == BNO055_OK);
+
+    assert(memcmp(out.raw, &f.regs[0x55], 22) == 0);
+
+    /* Check if the chip was left in IMU mode. */
+    assert(f.regs[0x3D] == 0x08);
+}
+
+static void expect_write(const fake_ev_t *ev, uint8_t reg, const uint8_t *data, uint16_t len)
+{
+    assert(ev->reg == reg);
+    assert(ev->len == len);
+    assert(memcmp(ev->data, data, len) == 0);
+}
+
+static void expect_delay(const fake_ev_t *ev, uint32_t ms)
+{
+    assert(ev->type == FAKE_EV_DELAY);
+    assert(ev->ms == ms);
+}
+
+static void test_write_offsets_sequence(void)
+{
+    bno055_offsets_t offsets;
+
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+
+    for (size_t i = 0; i < 22; i++)
+    {
+        offsets.raw[i] = i + 1;
+    }
+   
+    assert(bno055_write_offsets(&dev, &offsets) == BNO055_OK);
+
+    assert(f.log_count == 5);
+
+    /* The offset register can only be written in CONFIG mode, so the
+     * the first thing on the bus should be OPR_MODE(0x3D) == CONFIG (0x00)
+     */
+    expect_write(&f.log[0], 0x3D, (uint8_t[]){0x00}, 1);
+
+    /*
+     * Switching to CONFIG takes 19ms
+     */
+    expect_delay(&f.log[1], 19);
+    /*
+     * The offsets are 22 bytes starting at 0x55(register map), one write
+     * to 0x55 length 22, with exactly the bytes the caller passed in.
+     */
+    expect_write(&f.log[2], 0x55, offsets.raw, 22);
+    /*
+     * Fusion has to run again afterwards, so OPR_MODE=IMU(0x08)
+     */
+    expect_write(&f.log[3], 0x3D, (uint8_t[]){0x08}, 1);
+
+    /*
+     * Switching to an operating mode takes 7ms.
+     */
+    expect_delay(&f.log[4], 7);
+
+    
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -165,6 +242,10 @@ int main(void)
 
     test_read_null_args();
     test_read_bus_error();
+
+    test_read_offsets_data();
+
+    test_write_offsets_sequence();
 
     printf("All tests passed\n");
     return 0;

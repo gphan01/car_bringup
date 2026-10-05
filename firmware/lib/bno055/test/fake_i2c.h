@@ -9,6 +9,7 @@ enum {
 };
 
 typedef enum {
+    FAKE_EV_NONE,
     FAKE_EV_WRITE,
     FAKE_EV_DELAY,   
 } fake_ev_type_t;
