@@ -46,12 +46,12 @@ int fake_i2c_write(void *ctx, uint8_t reg, const uint8_t *buf, uint16_t len)
     assert(len <= FAKE_MAX_WRITE);
     assert(f->log_count < FAKE_MAX_EVENTS);
 
+    fake_ev_t *ev = &f->log[f->log_count++];
     
-    f->log[f->log_count].type = FAKE_EV_WRITE;
-    f->log[f->log_count].reg  = reg;
-    f->log[f->log_count].len  = len;
-    memcpy(&f->log[f->log_count].data, buf, len);
-    f->log_count++;
+    ev->type = FAKE_EV_WRITE;
+    ev->reg  = reg;
+    ev->len  = len;
+    memcpy(ev->data, buf, len);
 
     if (reg == f->fail_write_reg)
     {
@@ -65,5 +65,10 @@ int fake_i2c_write(void *ctx, uint8_t reg, const uint8_t *buf, uint16_t len)
 
 void fake_i2c_delay(uint32_t ms)
 {
-    (void)ms;
+    assert(curr != NULL);
+    assert(curr->log_count < FAKE_MAX_EVENTS);
+
+    fake_ev_t *ev = &curr->log[curr->log_count++];
+    ev->type = FAKE_EV_DELAY;
+    ev->ms = ms;
 }
