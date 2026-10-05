@@ -228,8 +228,34 @@ static void test_write_offsets_sequence(void)
      * Switching to an operating mode takes 7ms.
      */
     expect_delay(&f.log[4], 7);
+}
 
+static void test_write_offsets_restores_mode_on_failure(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+
+    f.fail_write_reg = 0x55;
+
+    bno055_offsets_t offsets;
+
+    for (size_t i = 0; i < 22; i++)
+    {
+        offsets.raw[i] = i + 1;
+    }
     
+    assert(bno055_write_offsets(&dev, &offsets) == BNO055_ERR_BUS);
+
+    assert(f.log_count == 5); // Expect the 5 steps to occur
+
+    expect_write(&f.log[3], 0x3D, (uint8_t[]){0x08}, 1);
+
+    expect_delay(&f.log[4], 7);
+
+    uint8_t zeros[22] = {0};
+    assert(memcmp(&f.regs[0x55], zeros, sizeof(zeros)) == 0);
+
+    assert(f.regs[0x3D] == 0x08);
 }
 
 int main(void)
@@ -246,6 +272,7 @@ int main(void)
     test_read_offsets_data();
 
     test_write_offsets_sequence();
+    test_write_offsets_restores_mode_on_failure();
 
     printf("All tests passed\n");
     return 0;
