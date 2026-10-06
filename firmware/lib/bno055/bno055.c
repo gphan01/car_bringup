@@ -184,6 +184,19 @@ bno055_status_t bno055_read_calib(const bno055_t *dev, bno055_calib_t *out)
     return st;
 }
 
+static bno055_status_t restore_imu(const bno055_t *dev, bno055_status_t prev)
+{
+    bno055_status_t st = set_mode(dev, VAL_MODE_IMU);
+
+    if (prev != BNO055_OK)
+    {
+        return prev;
+    }
+
+    return st;
+
+}
+
 
 bno055_status_t bno055_read_offsets(const bno055_t *dev, bno055_offsets_t *out)
 {
@@ -199,23 +212,17 @@ bno055_status_t bno055_read_offsets(const bno055_t *dev, bno055_offsets_t *out)
     bno055_offsets_t tmp;
 
     st = read_regs(dev, REG_ACC_OFFSETS_X_LSB, tmp.raw, sizeof(tmp.raw));
+
+    st = restore_imu(dev, st);
+
+    if (st != BNO055_OK) return st;
     
-    bno055_status_t st2 = set_mode(dev, VAL_MODE_IMU);
-
-    if (st != BNO055_OK)
-    {
-        return st;
-    }
-
-   if (st2 != BNO055_OK)
-    {
-        return st2;
-    }
-
     *out = tmp;
 
     return BNO055_OK;
 }
+
+
 
 
 bno055_status_t bno055_write_offsets(const bno055_t *dev, const bno055_offsets_t *in)
@@ -231,19 +238,50 @@ bno055_status_t bno055_write_offsets(const bno055_t *dev, const bno055_offsets_t
 
     st = write_regs(dev, REG_ACC_OFFSETS_X_LSB, in->raw, sizeof(in->raw));
     
-    bno055_status_t st2 = set_mode(dev, VAL_MODE_IMU);
+    return restore_imu(dev, st);
+}
 
-    if (st != BNO055_OK)
+
+bno055_status_t bno055_set_axis_remap(const bno055_t *dev, uint8_t config, uint8_t sign)
+{
+    if (!dev)  return BNO055_ERR_ARG;
+
+    /* 7:3 are reserved */
+    if ((sign & ~0x07) != 0)
+    {
+        return BNO055_ERR_ARG;
+    }
+    
+    /* 7:6 are reserved */
+    if ((config & ~0x3F) != 0)
+    {
+        return BNO055_ERR_ARG;
+    }
+
+    uint8_t x = (config >> 0 ) & 0x03; /* bits 1:0 */
+    uint8_t y = (config >> 2 ) & 0x03; /* bits 3:2 */
+    uint8_t z = (config >> 4 ) & 0x03; /* bits 5:4 */
+
+    /* Only X=0, Y=1, Z=2 are valid axes */
+    if (x == 3 || y == 3 || z == 3)
+    {
+        return BNO055_ERR_ARG;
+    }
+
+    if (x==y || y==z || z==x)
+    {
+        return BNO055_ERR_ARG;
+    }
+
+    bno055_status_t st = set_mode(dev, VAL_MODE_CONFIG);
+
+    if ( st != BNO055_OK)
     {
         return st;
     }
 
-   if (st2 != BNO055_OK)
-    {
-        return st2;
-    }
-
-    return BNO055_OK;
+    st = write_regs(dev, REG_AXIS_MAP_CONFIG, (uint8_t[2]){config, sign}, 2);
+    return restore_imu(dev, st);
 }
 
 
