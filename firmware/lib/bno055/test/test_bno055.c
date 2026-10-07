@@ -328,6 +328,37 @@ static void test_set_axis_remap_invalid(void)
     assert(f.log_count == 5);
 }
 
+static void test_set_axis_remap_restores_mode_on_failure(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+
+    f.fail_write_reg = 0x41;
+
+    uint8_t config = 0x09;
+    uint8_t sign = 0x04;
+
+    bno055_status_t st = bno055_set_axis_remap(&dev, config, sign);
+
+    assert(st == BNO055_ERR_BUS);
+
+    assert(f.log_count == 5);
+
+    expect_write(&f.log[0], 0x3D, (uint8_t []){0x00}, 1);
+    expect_delay(&f.log[1], 19);
+    /* Attempt to write the config and sign values appear on the log */
+    expect_write(&f.log[2], 0x41, (uint8_t [2]){config, sign}, 2);
+    expect_write(&f.log[3], 0x3D, (uint8_t []){0x08}, 1);
+    expect_delay(&f.log[4], 7);
+
+    /* Prove restore still occurred */
+    assert(f.regs[0x3D] == 0x08);
+    
+    /* Failed writes did not land */ 
+    assert(f.regs[0x41] == 0);
+    assert(f.regs[0x42] == 0);
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -346,6 +377,7 @@ int main(void)
     test_set_axis_remap_valid();
 
     test_set_axis_remap_invalid();
+    test_set_axis_remap_restores_mode_on_failure();
 
     printf("All tests passed\n");
     return 0;
