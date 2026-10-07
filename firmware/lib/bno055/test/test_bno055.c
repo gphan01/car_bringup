@@ -288,6 +288,46 @@ static void test_set_axis_remap_valid(void)
     assert(f.regs[0x3D] == 0x08);
 }
 
+static void test_set_axis_remap_invalid(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+
+    /* Declare the valid sign and config */
+    const uint8_t valid_config = 0x09;
+    const uint8_t valid_sign = 0x04;
+
+    /* Invalid sign */
+    uint8_t sign = 0x08;
+
+    bno055_status_t  st = bno055_set_axis_remap(&dev, valid_config, sign);
+
+    assert(st == BNO055_ERR_ARG);
+    assert(f.log_count == 0);
+
+    /* Reserved bit in config */
+    st = bno055_set_axis_remap(&dev, valid_config | 0x40, valid_sign);
+    assert(st == BNO055_ERR_ARG);
+    assert(f.log_count == 0);
+
+    /* Field == 3 */
+    st = bno055_set_axis_remap(&dev, 0x0B, valid_sign);
+
+    assert(st == BNO055_ERR_ARG);
+    assert(f.log_count == 0);
+
+     /* Duplicate fields */
+    st = bno055_set_axis_remap(&dev, 0x00, valid_sign);
+    assert(st == BNO055_ERR_ARG);
+    assert(f.log_count == 0);
+
+
+    /* Valid case */
+    st = bno055_set_axis_remap(&dev, valid_config, valid_sign);
+    assert(st == BNO055_OK);
+    assert(f.log_count == 5);
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -304,6 +344,8 @@ int main(void)
     test_write_offsets_sequence();
     test_write_offsets_restores_mode_on_failure();
     test_set_axis_remap_valid();
+
+    test_set_axis_remap_invalid();
 
     printf("All tests passed\n");
     return 0;
