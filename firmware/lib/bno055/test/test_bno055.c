@@ -258,6 +258,36 @@ static void test_write_offsets_restores_mode_on_failure(void)
     assert(f.regs[0x3D] == 0x08);
 }
 
+static void test_set_axis_remap_valid(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_dev(&f);
+
+    // x = 1, y = 2, z = 0
+    uint8_t config = ((0 << 4) | (2 << 2) | 1);
+    uint8_t sign = 0x04;
+
+    bno055_status_t st = bno055_set_axis_remap(&dev, config, sign);
+
+    assert(st == BNO055_OK);
+
+    assert(f.log_count == 5);
+
+    // Switch to CONFIG
+    expect_write(&f.log[0], 0x3D, (uint8_t []){0x00}, 1);
+    expect_delay(&f.log[1], 19);
+    expect_write(&f.log[2], 0x41, (uint8_t[2]){config, sign}, 2);
+
+    // Switch to IMU
+    expect_write(&f.log[3], 0x3D, (uint8_t[]){0x08}, 1); 
+    expect_delay(&f.log[4], 7);
+
+    // Check the two byte burst landed
+    assert(f.regs[0x41] == config);
+    assert(f.regs[0x42] == sign);
+    assert(f.regs[0x3D] == 0x08);
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -273,6 +303,7 @@ int main(void)
 
     test_write_offsets_sequence();
     test_write_offsets_restores_mode_on_failure();
+    test_set_axis_remap_valid();
 
     printf("All tests passed\n");
     return 0;
