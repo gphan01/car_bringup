@@ -23,12 +23,28 @@ enum {
     VAL_MODE_IMU            = 0x08,
     VAL_UNIT_SEL_RAD_MS2        = 0x02,
     VAL_SYS_TRIGGER_EXT_CLK    = 0x80,
+    VAL_PAGE_0 = 0x00,
 };
 
 enum {
     DELAY_TO_CONFIG_MS = 19,
     DELAY_TO_OPMODE_MS = 7,
+    DELAY_POST_CLOCK_WRITE = 10,
 };
+
+enum {
+    POLL_READ_CHIP_TIMEOUT_MS = 1000,
+    POLL_READ_CHIP_INTERVAL_MS = 10, // 10ms
+    POLL_ATTEMPTS = POLL_READ_CHIP_INTERVAL_MS / POLL_READ_CHIP_TIMEOUT_MS,
+
+};
+
+/* Run this call,if it failed, return that the error from the current function right away */
+#define TRY(expr) \
+    do {\
+        bno055_status_t st_ = (expr); \
+        if (st_ != BNO055_OK) return st_;\
+    } while(0) 
 
 // Scaling factors 
 static const float GYR_LSB_PER_RAD_S = 900.0f;
@@ -282,6 +298,46 @@ bno055_status_t bno055_set_axis_remap(const bno055_t *dev, uint8_t config, uint8
 
     st = write_regs(dev, REG_AXIS_MAP_CONFIG, (uint8_t[2]){config, sign}, 2);
     return restore_imu(dev, st);
+}
+
+bno055_status_t bno055_init(const bno055_t *dev, bno055_offsets_t *offsets)
+{
+    if(!dev || !dev->read || !dev->write || !dev->delay_ms)
+    {
+        return BNO055_ERR_ARG;
+    }
+
+    for (size_t i = 0; i < POLL_ATTEMPTS; i++)
+    {
+        uint8_t id = 0;
+        TRY(read_regs(dev, REG_CHIP_ID, &id, 1);
+
+        if (id == VAL_CHIP_ID) break;
+
+
+    }
+
+    TRY(write_reg8(dev, REG_PAGE_ID, VAL_PAGE_0));
+
+    TRY(set_mode(dev, VAL_MODE_CONFIG));
+    
+    TRY(write_reg8(dev, REG_SYS_TRIGGER, VAL_SYS_TRIGGER_EXT_CLK));
+    dev->delay_ms(DELAY_POST_CLOCK_WRITE);
+
+    TRY(write_reg8(dev, REG_UNIT_SEL, VAL_UNIT_SEL_RAD_MS2);
+
+    if (!offsets)
+    {
+        TRY(write_regs(dev, REG_ACC_OFFSETS_X_LSB, offsets->raw, sizeof(offsets->raw)));
+    }
+
+    TRY(set_mode(dev,VAL_MODE_IMU));
+
+
+
+
+
+
 }
 
 

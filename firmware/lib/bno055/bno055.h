@@ -41,7 +41,7 @@ typedef enum {
 } bno055_status_t;
 
 
-bno055_status_t bno055_init(bno055_t *dev, bno055_offsets_t *offsets);
+bno055_status_t bno055_init(const bno055_t *dev, bno055_offsets_t *offsets);
 bno055_status_t bno055_read_gyro(const bno055_t *dev, bno055_vec3_t *out); // rad/s
 bno055_status_t bno055_read_quat(const bno055_t *dev, bno055_quat_t *out); // unit quaternion
 bno055_status_t bno055_read_accel(const bno055_t *dev, bno055_vec3_t *out); // m/s^2 ACC (0x08) 

@@ -151,6 +151,8 @@ static void test_read_bus_error(void)
 
     assert(bno055_read_gyro(&dev, &g) == BNO055_ERR_BUS);
 
+    // f.fail_reads = 1;
+
     bno055_calib_t c = {  0xAA, 0xAA, 0xAA, 0xAA};
 
     assert(bno055_read_calib(&dev, &c) == BNO055_ERR_BUS);
