@@ -5,7 +5,7 @@
 
 enum {
     FAKE_MAX_WRITE = 32,
-    FAKE_MAX_EVENTS = 64,
+    FAKE_MAX_EVENTS = 256,
 };
 
 typedef enum {
@@ -26,6 +26,7 @@ typedef struct
 {
     uint8_t regs[256];
     int fail_reads;
+    int read_count;
     fake_ev_t log[FAKE_MAX_EVENTS];
     int log_count;
     int fail_write_reg; // -1 means never fail  

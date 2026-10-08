@@ -24,8 +24,11 @@ int fake_i2c_read(void *ctx, uint8_t reg, uint8_t *buf, uint16_t len)
     fake_i2c_t *f = ctx;
     assert(reg + len <= sizeof(f->regs));
 
-    if (f->fail_reads)
+    f->read_count++;
+
+    if (f->fail_reads > 0)
     {
+        f->fail_reads--;
         return -1; /* Fake a failed I2C transfer */
     }
 
