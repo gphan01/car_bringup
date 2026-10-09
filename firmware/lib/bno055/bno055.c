@@ -1,5 +1,7 @@
 #include "bno055.h"
 
+#include <string.h>
+
 enum {
     REG_CHIP_ID       = 0x00,
     REG_PAGE_ID       = 0x07,
@@ -35,7 +37,7 @@ enum {
 enum {
     POLL_READ_CHIP_TIMEOUT_MS = 1000,
     POLL_READ_CHIP_INTERVAL_MS = 10, // 10ms
-    POLL_ATTEMPTS = POLL_READ_CHIP_INTERVAL_MS / POLL_READ_CHIP_TIMEOUT_MS,
+    POLL_ATTEMPTS = POLL_READ_CHIP_TIMEOUT_MS / POLL_READ_CHIP_INTERVAL_MS,
 
 };
 
@@ -307,15 +309,40 @@ bno055_status_t bno055_init(const bno055_t *dev, bno055_offsets_t *offsets)
         return BNO055_ERR_ARG;
     }
 
+    bool found = false;
+    bool got_resp = false;
+
     for (size_t i = 0; i < POLL_ATTEMPTS; i++)
     {
         uint8_t id = 0;
-        TRY(read_regs(dev, REG_CHIP_ID, &id, 1);
+        bno055_status_t st = read_regs(dev, REG_CHIP_ID, &id, 1);
 
-        if (id == VAL_CHIP_ID) break;
+        got_resp = (st == BNO055_OK);
+  
+        if (st == BNO055_OK  && id == VAL_CHIP_ID)
+        {
+            found = true;
+            break;
+        }
 
+        dev->delay_ms(POLL_READ_CHIP_INTERVAL_MS);
 
     }
+
+    if (!found)
+    {
+        if (got_resp)
+        {
+            return BNO055_ERR_ID; /* Last read worked, but the ID was wrong */
+        }
+        else
+        {
+            return BNO055_ERR_TIMEOUT; /* Last read failed: nothing replying */
+        }
+    }
+
+    /* Chip id polled successfully */
+
 
     TRY(write_reg8(dev, REG_PAGE_ID, VAL_PAGE_0));
 
@@ -324,9 +351,9 @@ bno055_status_t bno055_init(const bno055_t *dev, bno055_offsets_t *offsets)
     TRY(write_reg8(dev, REG_SYS_TRIGGER, VAL_SYS_TRIGGER_EXT_CLK));
     dev->delay_ms(DELAY_POST_CLOCK_WRITE);
 
-    TRY(write_reg8(dev, REG_UNIT_SEL, VAL_UNIT_SEL_RAD_MS2);
+    TRY(write_reg8(dev, REG_UNIT_SEL, VAL_UNIT_SEL_RAD_MS2));
 
-    if (!offsets)
+    if (offsets != NULL)
     {
         TRY(write_regs(dev, REG_ACC_OFFSETS_X_LSB, offsets->raw, sizeof(offsets->raw)));
     }
@@ -334,10 +361,7 @@ bno055_status_t bno055_init(const bno055_t *dev, bno055_offsets_t *offsets)
     TRY(set_mode(dev,VAL_MODE_IMU));
 
 
-
-
-
-
+    return BNO055_OK;
 }
 
 
