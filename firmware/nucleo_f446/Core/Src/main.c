@@ -103,17 +103,19 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  /* USER CODE BEGIN 2 */
-	  HAL_Delay(700);
 
-	  HAL_StatusTypeDef ready = HAL_I2C_IsDeviceReady(&hi2c1, 0x28 << 1, 3, 100);
+    /* USER CODE END WHILE */
 
-	  uint8_t id = 0;
-	  HAL_StatusTypeDef rd = HAL_I2C_Mem_Read(&hi2c1, 0x28 << 1, 0x00,
-	                                          I2C_MEMADD_SIZE_8BIT, &id, 1, 100);
+    /* USER CODE BEGIN 3 */
+    HAL_Delay(700);
 
-	  __NOP();   /* put the breakpoint on this line */
-	  /* USER CODE END 2 */
+    HAL_StatusTypeDef ready = HAL_I2C_IsDeviceReady(&hi2c1, 0x28 << 1, 3, 100);
+
+    uint8_t id = 0;
+    HAL_StatusTypeDef rd = HAL_I2C_Mem_Read(&hi2c1, 0x28 << 1, 0x00,
+                                            I2C_MEMADD_SIZE_8BIT, &id, 1, 100);
+
+    __NOP();   /* put the breakpoint on this line */
   }
   /* USER CODE END 3 */
 }

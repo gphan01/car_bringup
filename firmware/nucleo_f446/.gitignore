@@ -1,7 +1,8 @@
 Debug/
 Release/
-.settings/language.settings.xml
 build/
-.settings/
 .project
 .cproject
+
+.settings/*
+!.settings/ide.store.json

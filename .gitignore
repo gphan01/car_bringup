@@ -11,4 +11,6 @@ test_bno055
 
 # editor
 *.swp
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
