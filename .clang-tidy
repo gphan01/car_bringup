@@ -1,0 +1,31 @@
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  cert-*,
+  misc-*,
+  performance-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -misc-include-cleaner,
+  -cert-err33-c
+HeaderFilterRegex: '(lib|Core/Inc)/.*'Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  cert-*,
+  misc-*,
+  performance-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -misc-include-cleaner,
+  -cert-err33-c
+HeaderFilterRegex: '(lib|Core/Inc)/.*'
+
+
