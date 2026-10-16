@@ -9,10 +9,6 @@
 # host test binary
 test_bno055
 
-# core dumps from failed asserts
-core
-core.*
-
 # editor
 *.swp
 .vscode/
