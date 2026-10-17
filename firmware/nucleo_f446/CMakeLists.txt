@@ -34,6 +34,12 @@ enable_language(C ASM)
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
 
+# BNO055 driver: its own library, built with strict warnings
+add_library(bno055 STATIC ${CMAKE_SOURCE_DIR}/../lib/bno055/bno055.c)
+target_include_directories(bno055 PUBLIC ${CMAKE_SOURCE_DIR}/../lib/bno055)
+target_compile_options(bno055 PRIVATE
+                        -Wall -Wextra -Werror -Wshadow -Wdouble-promotion -Wconversion)
+
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 
@@ -45,6 +51,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    Core/Src/bno055_port.c
 )
 
 # Add include paths
@@ -63,6 +70,7 @@ list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 # Add linked libraries
 target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
+    bno055
 
     # Add user defined libraries
 )
