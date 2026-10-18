@@ -416,7 +416,7 @@ static void test_init_happy_path(void)
     /* Select SYS_TRIGGER as EXT_CLK */
     expect_write(&f.log[3], 0x3F, (uint8_t[]){0x80}, 1);
     expect_delay(&f.log[4], 10);
-    /*Select unit as rad/ms^2*/
+    /*Select unit as rad/s and m/s^2*/
     expect_write(&f.log[5], 0x3B, (uint8_t[]){0x02}, 1);
 
     /* Set mode to IMU*/
@@ -458,6 +458,8 @@ static void test_init_with_offsets(void)
     /* Set mode to IMU*/
     expect_write(&f.log[7], 0x3D, (uint8_t[]){0x08}, 1);
     expect_delay(&f.log[8], 7);
+
+    ASSERT_EQ(memcmp(&f.regs[0x55], offs.raw, 22), 0);
 }
 
 static void test_init_null_args(void)
@@ -508,6 +510,46 @@ static void test_init_slow_boot(void)
     expect_delay(&f.log[10], 7);
 }
 
+static void test_init_no_chip(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_ready_dev(&f);
+
+    f.fail_reads = 1000;
+
+    ASSERT_EQ(bno055_init(&dev, NULL), BNO055_ERR_TIMEOUT);
+}
+
+static void test_init_wrong_chip(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_ready_dev(&f);
+    f.regs[0x00] = 0x55;
+    ASSERT_EQ(bno055_init(&dev, NULL), BNO055_ERR_ID);
+}
+
+static void test_init_fusion_not_running(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_ready_dev(&f);
+
+    f.regs[0x39] = 1;
+
+    ASSERT_EQ(bno055_init(&dev, NULL), BNO055_ERR_STATE);
+}
+
+static void test_init_fail_mid_write(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_ready_dev(&f);
+    f.fail_write_reg = 0x3B;
+    ASSERT_EQ(bno055_init(&dev, NULL), BNO055_ERR_BUS);
+
+    /*No IMU write occurred*/
+    ASSERT_EQ(f.log_count, 6);
+    expect_write(&f.log[5], 0x3B, (uint8_t[]){0x02}, 1);
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -532,6 +574,10 @@ int main(void)
     test_init_with_offsets();
     test_init_null_args();
     test_init_slow_boot();
+    test_init_fusion_not_running();
+    test_init_fail_mid_write();
+    test_init_no_chip();
+    test_init_wrong_chip();
 
     printf("\n All tests passed\n");
     return 0;
