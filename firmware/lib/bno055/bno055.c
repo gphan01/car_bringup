@@ -1,6 +1,7 @@
 #include "bno055.h"
 
 #include <string.h>
+#include <stdbool.h>
 
 enum
 {
