@@ -273,7 +273,7 @@ Screenshot for the README: RViz view type **TopDownOrtho**, Fixed Frame `map`.
 
 Bench: Pi on its official 27 W USB-C supply. On the car, the stock 8.4 V NiMH pack (≈9.8 V
 fresh off the charger, sags toward 7 V under load) feeds everything. Built and verified
-2026-10-17 — build sheet: [power_system_build.png](images/power_system_build.png).
+2026-10-17 — build sheet: ![power_system_build.png](images/power_system_build.png).
 
 ```
  Battery ─► [TRX male] ══14 AWG══ J1/J2 ══14 AWG══ [TRX female] ─► XL-5 ESC ─► motor
