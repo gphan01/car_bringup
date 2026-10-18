@@ -1,129 +1,93 @@
-# BNO055 driver
+# car_bringup
 
-Hardware-independent C11 driver for the Bosch BNO055 IMU, used on the car's
-STM32 Nucleo-F446RE (Adafruit breakout on I2C1, PB8/PB9).
+Autonomous 1/10-scale LiDAR car on ROS 2: SLAM-built maps, Nav2 path planning, and Ackermann
+control. Developed in the F1TENTH gym simulator, then ported to hardware - Traxxas chassis,
+Raspberry Pi 5, STM32 Nucleo-F446RE, Slamtec RPLIDAR C1.
 
-- Runs in **IMU fusion mode**: accelerometer + gyroscope, no magnetometer
-  (the motor's field makes the magnetometer unreliable indoors).
-- External 32.768 kHz crystal, gyro in **rad/s**, accel in **m/s²**.
-- No HAL, no globals, no dynamic memory. All bus access goes through three
-  function pointers, so the same `bno055.c` runs on the STM32 and on a PC.
+## Status
 
-## Files
-
-| File | Purpose |
-|---|---|
-| `bno055.h` | Public API and bus contract |
-| `bno055.c` | Driver |
-| `test/` | Host tests: fake I2C register file + test runner |
-
-## Porting
-
-Implement three functions for your platform and put them in a `bno055_t`:
-
-```c
-int  read(void *ctx, uint8_t reg, uint8_t *buf, uint16_t len);        /* 0 = OK */
-int  write(void *ctx, uint8_t reg, const uint8_t *buf, uint16_t len); /* 0 = OK */
-void delay_ms(uint32_t ms);
-```
-
-- Return 0 on success and nonzero on any failure. The driver maps every
-  failure to `BNO055_ERR_BUS`.
-- The driver never sees the I2C device address. The port owns it: use
-  `BNO055_I2C_ADDR_A` (0x28, 7-bit) and shift it if your bus API wants the
-  8-bit form. **STM32 HAL does:** pass `BNO055_I2C_ADDR_A << 1`.
-- Reads and writes must be single burst transfers with a repeated start
-  (`HAL_I2C_Mem_Read` / `HAL_I2C_Mem_Write` on STM32).
-- `ctx` is passed through untouched, e.g. `&hi2c1`.
-
-The STM32 port lives in `nucleo_f446/Core/Src/bno055_port.c`.
-
-## Usage
-
-```c
-bno055_t dev = {0};
-bno055_port_init(&dev, &hi2c1);
-
-bno055_status_t st = bno055_init(&dev, NULL);   /* or &saved_offsets */
-
-bno055_vec3_t gyro, accel;
-bno055_read_gyro(&dev, &gyro);    /* rad/s */
-bno055_read_accel(&dev, &accel);  /* m/s^2, gravity included */
-```
-
-Initialize `dev` with `{0}`: an uninitialized function pointer would jump to
-garbage instead of failing with `ERR_ARG`.
-
-## Error codes
-
-| Code | Meaning | First thing to check |
+| Milestone | What "done" means | State |
 |---|---|---|
-| `ERR_ARG` | NULL or invalid argument; nothing was sent | caller code |
-| `ERR_TIMEOUT` | nothing answered during the ~1 s boot poll | power, wiring, SDA/SCL swapped, address shift |
-| `ERR_ID` | a device answered, CHIP_ID was not 0xA0 | wrong device or wrong ADR setting |
-| `ERR_BUS` | an I2C transfer failed after the chip was found | loose wire, bus noise, clock stretching |
-| `ERR_STATE` | fusion did not start, or SYS_ERR is set | read SYS_STATUS / SYS_ERR (0x39 / 0x3A) |
+| M0 | Sim running, drive with keyboard | done |
+| M1 | slam_toolbox builds a map from scans | done |
+| M2 | Click a goal in RViz, Nav2 drives there | **done** - stalls on tight turnaround loops ([known issues](docs/nav2.md#known-issues)) |
+| M3 | Real LiDAR publishing `/scan` on the Pi, handheld SLAM map | **done** ([hardware](docs/hardware.md)) |
+| M4 | STM32: PWM to ESC/servo, wheel odometry, IMU, power harness | **next** |
+| M5 | Real-world SLAM, driving by teleop | - |
+| M6 | Autonomy on hardware | - |
 
-## Timing
+<img src="docs/images/room_handheld.png" width="400" alt="Handheld SLAM map from the real RPLIDAR C1">
 
-| Call | Blocks for |
-|---|---|
-| `bno055_init` | ~40 ms if already booted, up to ~1.1 s after power-on |
-| `read_offsets`, `write_offsets`, `set_axis_remap` | ~26 ms (CONFIG round trip); fusion output invalid meanwhile |
-| `read_gyro`, `read_accel`, `read_quat`, `read_calib` | one I2C transfer, under 1 ms at 100 kHz |
+*M3: first map from the real LiDAR, carried by hand (no odometry yet, hence the doubled room).*
 
-Call the mode-switching functions at startup, not from the control loop.
+## How it fits together
 
-## Calibration
-
-Offsets live in RAM on the BNO055 and are lost at power-off, so calibrate
-once and restore at every boot:
-
-1. Run with `bno055_init(&dev, NULL)` and poll `bno055_read_calib()`.
-2. Gyro: keep the board still for a few seconds until `gyr == 3`.
-3. Accel: hold the board still in ~6 orientations (each face up/down),
-   a few seconds each, until `acc == 3`.
-4. `bno055_read_offsets()` and copy the 22 bytes into a `const
-   bno055_offsets_t` in the firmware.
-5. Pass that array to `bno055_init()` from then on.
-
-Offsets belong to one specific chip in one mounting. Recalibrate after
-swapping the breakout.
-
-## Axis remap
-
-`bno055_set_axis_remap(dev, config, sign)` maps the sensor axes to the
-car frame (ROS REP 103: x forward, y left, z up). See the comment in
-`bno055.h` for the bit layout. Invalid mappings return `ERR_ARG` instead of
-being silently ignored by the chip.
-
-## Host tests
-
-Run from this directory, in Linux/WSL:
-
-```bash
-make -C test test                         # build and run
-valgrind --error-exitcode=1 ./test/test_bno055
-bear -- make -C test                      # regenerate compile_commands.json for clangd
+```
+ LiDAR ──/scan──► slam_toolbox ──/map, map→odom──► Nav2 ──/cmd_vel_nav──► ackermann_converter
+   ▲                                                ▲                            │
+   │              odometry ──odom→base_link─────────┘                       /drive
+   │                                                                             ▼
+   └──────────────────── sim bridge (now) / RPLIDAR + STM32 (hardware) ◄─────────┘
 ```
 
-The fake I2C (`test/fake_i2c.c`) is a 256-byte register file with:
+Everything above the bottom line is identical in sim and on the car - only the source of
+`/scan` and odometry, and the consumer of `/drive`, change. Details:
+[architecture](docs/architecture.md).
 
-- an event log of every write and delay, for checking exact sequences
-- `fail_reads`: countdown, the next N reads fail
-- `fail_write_reg`: writes starting at that register fail (-1 = off)
-- `read_count`: number of read attempts
+## Quick start (normal session)
 
-Tests cover scaling and sign handling for every read, NULL arguments, bus
-errors leaving outputs untouched, offset and remap mode switching with
-restore-on-failure, and every `init` path: happy path, offsets, slow boot,
-fusion not running, and a write failing mid-init.
+1. Start **Docker Desktop** on Windows. Nothing below works without it.
+2. In WSL:
+   ```bash
+   sim        # alias for ~/f1tenth_ws/src/car_bringup/sim.sh
+   ```
+3. Extra shells into the same container, from other WSL tabs:
+   ```bash
+   simsh      # alias for docker exec -it f1tenth_sim /bin/bash
+   ```
+   Confirm the sim patches are checked out:
+   `git -C ~/f1tenth_ws/src/f1tenth_gym_ros branch --show-current` → `slam-fixes`
+4. Launch everything with one command:
+   ```bash
+   ros2 launch /sim_ws/src/car_bringup/launch/sim_bringup_launch.py 2>&1 | tee /tmp/run.log
+   ```
+   Starts sim + RViz, slam_toolbox, the converter, then Nav2 after 8 s (so `map` exists first).
+   Wait for `Managed nodes are active`. **Ctrl+C stops all of it.**
 
-## Hardware notes
+   Optional, separate pane - manual driving (stop it before sending Nav2 goals; both publish
+   to `/cmd_vel_nav` and fight):
+   ```bash
+   ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=cmd_vel_nav
+   ```
+5. RViz: **Fixed Frame = `map`**. Useful displays (Add → By topic): `/plan` (Path),
+   `/local_costmap/costmap` and `/global_costmap/costmap` (Map, color scheme `costmap`).
+6. Send goals with **2D Goal Pose**. Never use **2D Pose Estimate** while SLAM runs - it
+   teleports the sim car and SLAM stitches the map at the wrong pose (doubled corridors).
+   Drag the arrow roughly along the car's current heading.
 
-- The chip needs ~650 ms after power-on before it answers. `init` polls for it.
-- Configuration registers (units, offsets, remap) only accept writes in
-  CONFIG mode. Writes in IMU mode are silently ignored.
-- Mode switches need 19 ms into CONFIG and 7 ms out of it.
-- The BNO055 stretches the I2C clock heavily. STM32 I2C handles it; the
-  Raspberry Pi's I2C controller does not, so keep the IMU on the MCU.
+First time, or after the container is wiped: [sim setup](docs/sim-setup.md).
+Clean reset when things get confusing: `docker restart f1tenth_sim` from WSL.
+
+## Docs
+
+| | |
+|---|---|
+| [Sim setup](docs/sim-setup.md) | WSL, Docker, container, aliases, where things run, workspace layout |
+| [Architecture](docs/architecture.md) | converter node, TF frames, topics |
+| [Sim patches](docs/sim-patches.md) | the three `f1tenth_gym_ros` fixes and why |
+| [Nav2](docs/nav2.md) | config changes for Ackermann, known issues, tuning |
+| [Troubleshooting](docs/troubleshooting.md) | symptom → cause → fix |
+| [Hardware](docs/hardware.md) | Pi 5 + Jazzy setup, LiDAR, handheld SLAM, power, M4 plan |
+
+## Repo layout
+
+```
+car_bringup/
+├── car_bringup/ackermann_converter.py   Twist → AckermannDriveStamped node
+├── config/        slam_toolbox + Nav2 params
+├── launch/        sim_bringup_launch.py, nav2_launch.py
+├── maps/          saved maps (.pgm + .yaml)
+├── docs/          (+ docs/images/)
+├── sim.sh         start/create the sim container
+└── setup_container.sh
+```
