@@ -6,6 +6,20 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <stdlib.h> /* abort */
+
+#define ASSERT_EQ(actual, expected)                                                                \
+    do                                                                                             \
+    {                                                                                              \
+        long a_ = (long)(actual), e_ = (long)(expected);                                           \
+        if (a_ != e_)                                                                              \
+        {                                                                                          \
+            fprintf(stderr, "%s:%d: %s == %s failed (got %ld, expected %ld)\n", __FILE__,          \
+                    __LINE__, #actual, #expected, a_, e_);                                         \
+            abort();                                                                               \
+        }                                                                                          \
+    } while (0)
+
 static bno055_t make_dev(fake_i2c_t *f)
 {
     fake_i2c_init(f);
@@ -372,6 +386,128 @@ static void test_set_axis_remap_restores_mode_on_failure(void)
     assert(f.regs[0x42] == 0);
 }
 
+static bno055_t make_ready_dev(fake_i2c_t *f)
+{
+    bno055_t dev = make_dev(f);
+    f->regs[0x00] = 0xA0; /* Right ID*/
+    f->regs[0x39] = 5;    /*Fusion running*/
+    f->regs[0x3A] = 0;    /* No errors*/
+
+    return dev;
+}
+
+static void test_init_happy_path(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_ready_dev(&f);
+
+    bno055_status_t st = bno055_init(&dev, NULL);
+
+    assert(st == BNO055_OK);
+
+    assert(f.log_count == 8);
+    /* Write to REG_PAGE_ID making sure it is PAGE 0*/
+    expect_write(&f.log[0], 0x07, (uint8_t[]){0x00}, 1);
+    /* Enter config mode*/
+    expect_write(&f.log[1], 0x3D, (uint8_t[]){0x00}, 1);
+    /* Expect delay for 19 ms for CONFIG*/
+    expect_delay(&f.log[2], 19);
+
+    /* Select SYS_TRIGGER as EXT_CLK */
+    expect_write(&f.log[3], 0x3F, (uint8_t[]){0x80}, 1);
+    expect_delay(&f.log[4], 10);
+    /*Select unit as rad/ms^2*/
+    expect_write(&f.log[5], 0x3B, (uint8_t[]){0x02}, 1);
+
+    /* Set mode to IMU*/
+    expect_write(&f.log[6], 0x3D, (uint8_t[]){0x08}, 1);
+    expect_delay(&f.log[7], 7);
+}
+
+static void test_init_with_offsets(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_ready_dev(&f);
+
+    bno055_offsets_t offs;
+    for (size_t i = 0; i < sizeof(offs.raw); i++)
+    {
+        offs.raw[i] = (uint8_t)(i + 1);
+    }
+
+    bno055_status_t st = bno055_init(&dev, &offs);
+
+    assert(st == BNO055_OK);
+
+    assert(f.log_count == 9);
+    /* Write to REG_PAGE_ID making sure it is PAGE 0*/
+    expect_write(&f.log[0], 0x07, (uint8_t[]){0x00}, 1);
+    /* Enter config mode*/
+    expect_write(&f.log[1], 0x3D, (uint8_t[]){0x00}, 1);
+    /* Expect delay for 19 ms for CONFIG*/
+    expect_delay(&f.log[2], 19);
+
+    /* Select SYS_TRIGGER as EXT_CLK */
+    expect_write(&f.log[3], 0x3F, (uint8_t[]){0x80}, 1);
+    expect_delay(&f.log[4], 10);
+    /*Select unit as rad/ms^2*/
+    expect_write(&f.log[5], 0x3B, (uint8_t[]){0x02}, 1);
+    /* Write to offsets*/
+    expect_write(&f.log[6], 0x55, offs.raw, sizeof(offs.raw));
+
+    /* Set mode to IMU*/
+    expect_write(&f.log[7], 0x3D, (uint8_t[]){0x08}, 1);
+    expect_delay(&f.log[8], 7);
+}
+
+static void test_init_null_args(void)
+{
+    fake_i2c_t f;
+    bno055_t dev = make_ready_dev(&f);
+
+    bno055_status_t st = bno055_init(NULL, NULL);
+
+    assert(st == BNO055_ERR_ARG);
+
+    dev.delay_ms = NULL;
+    ASSERT_EQ(bno055_init(&dev, NULL), BNO055_ERR_ARG);
+    ASSERT_EQ(f.log_count, 0);
+}
+
+static void test_init_slow_boot(void)
+{
+    fake_i2c_t f;
+
+    bno055_t dev = make_ready_dev(&f);
+    f.fail_reads = 3;
+
+    ASSERT_EQ(bno055_init(&dev, NULL), BNO055_OK);
+    ASSERT_EQ(f.read_count, 6);
+
+    assert(f.log_count == 11);
+    /* 3 delays from the failed reac 3 times*/
+    expect_delay(&f.log[0], 10);
+    expect_delay(&f.log[1], 10);
+    expect_delay(&f.log[2], 10);
+
+    /* Write to REG_PAGE_ID making sure it is PAGE 0*/
+    expect_write(&f.log[3], 0x07, (uint8_t[]){0x00}, 1);
+    /* Enter config mode*/
+    expect_write(&f.log[4], 0x3D, (uint8_t[]){0x00}, 1);
+    /* Expect delay for 19 ms for CONFIG*/
+    expect_delay(&f.log[5], 19);
+
+    /* Select SYS_TRIGGER as EXT_CLK */
+    expect_write(&f.log[6], 0x3F, (uint8_t[]){0x80}, 1);
+    expect_delay(&f.log[7], 10);
+    /*Select unit as rad/ms^2*/
+    expect_write(&f.log[8], 0x3B, (uint8_t[]){0x02}, 1);
+
+    /* Set mode to IMU*/
+    expect_write(&f.log[9], 0x3D, (uint8_t[]){0x08}, 1);
+    expect_delay(&f.log[10], 7);
+}
+
 int main(void)
 {
     test_read_gyro_scaling();
@@ -392,6 +528,11 @@ int main(void)
     test_set_axis_remap_invalid();
     test_set_axis_remap_restores_mode_on_failure();
 
-    printf("All tests passed\n");
+    test_init_happy_path();
+    test_init_with_offsets();
+    test_init_null_args();
+    test_init_slow_boot();
+
+    printf("\n All tests passed\n");
     return 0;
 }
