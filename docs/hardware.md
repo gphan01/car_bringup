@@ -271,25 +271,48 @@ Screenshot for the README: RViz view type **TopDownOrtho**, Fixed Frame `map`.
 
 ## Power (M4)
 
-Bench: Pi on its official 27 W USB-C supply. On the car, one 2S/3S pack feeds everything:
+Bench: Pi on its official 27 W USB-C supply. On the car, the stock 8.4 V NiMH pack (≈9.8 V
+fresh off the charger, sags toward 7 V under load) feeds everything. Built and verified
+2026-10-17 — build sheet: [power_system_build.png](images/power_system_build.png).
 
 ```
- Battery ──► Y-harness ──┬──► XL-5 ESC ──► motor   (ESC's BEC also powers the servo)
-   (fuse)                │
-                         └──► 5 V / 6 A UBEC ──► 1000 µF cap ──► Pi GPIO pin 2 (5V), pin 6 (GND)
+ Battery ─► [TRX male] ══14 AWG══ J1/J2 ══14 AWG══ [TRX female] ─► XL-5 ESC ─► motor
+                                   ║                  (ESC's BEC also powers the servo)
+                          18 AWG, red via 5 A ATM fuse (holder right at J1)
+                                   ║
+                          Henge 8 A UBEC (jumper 5.0 V)
+                                   ║
+                   2 × 470 µF 25 V in parallel ─► USB-C pigtail ─► Pi 5 USB-C input
 ```
 
-- **Polarity check before plugging into GPIO.** Back-feeding 5 V through the header bypasses
-  the USB-C input's protection — reversed or >5.25 V kills the Pi. Meter it first.
-- Powered via GPIO, the Pi can't negotiate 5 A and limits USB current. Add to
-  `/boot/firmware/config.txt`:
-  ```
-  usb_max_current_enable=1
-  ```
-- Y-harness: battery-gauge wire on the main leg, thinner OK on the UBEC leg; inline fuse on
-  the UBEC leg so a short on the logic side doesn't dump the pack.
-- Cap at the Pi end absorbs drops when the motor draws a spike.
-- Common ground between ESC, servo, STM32 and Pi — PWM is referenced to it.
+- **Y-harness** from TRX pigtails (DEVMO, 14 AWG) spliced 3-way at J1 (red) / J2 (black). The
+  fuse holder's own 18 AWG lead is J1's third wire, so the unfused section is ~5 cm. Everything
+  after the fuse can be any length.
+- **USB-C, not GPIO:** feeding 5 V through the header bypasses the Pi's input protection, and
+  dupont pins are only good for ~1–1.5 A.
+- **Caps** at the UBEC output, polarity by the stripe (legs trimmed, so the long-leg mark is gone).
+- **Common ground** between ESC, servo, STM32 and Pi — PWM is referenced to it.
+- Traxxas parallel harness #3064X is 1/16-scale only (gauge unpublished) and the series
+  harnesses (#3063 and clones) are wrong entirely — neither used.
+
+**Verification (battery, ESC unplugged):**
+
+| Check | Result |
+|---|---|
+| Continuity red ↔ black at TRX and at USB-C | open ✓ |
+| UBEC output, no load | 5.1 V |
+| Pi 5 under `stress-ng --cpu 4`, 3 min | `get_throttled` = **0x0**, `EXT5V_V` = **5.07 V**, 76 °C |
+
+`vcgencmd pmic_read_adc EXT5V_V` is the Pi 5 measuring its own 5 V input — the best check of
+sag under load. On Ubuntu `vcgencmd` needs `/dev/vcio`: `sudo usermod -aG video $USER`, re-login.
+
+**PSU_MAX_CURRENT:** a bare USB-C pigtail can't do USB-PD, so the Pi assumes a weak supply and
+caps USB peripherals at 600 mA. The UBEC is rated 8 A, so tell the Pi it's a 5 A supply:
+`sudo rpi-eeprom-config --edit` → `PSU_MAX_CURRENT=5000` → reboot.
+
+**To do:** boot current on the bench supply (needs banana leads), then the same stress test
+with the LiDAR and Nucleo plugged in. 76 °C at full load with the fan at full speed is
+warm — check the cooler's seating.
 
 ## Traxxas XL-5 notes
 
@@ -300,44 +323,136 @@ Bench: Pi on its official 27 W USB-C supply. On the car, one 2S/3S pack feeds ev
   Procedure: hold the set button with neutral applied, then full throttle, full reverse,
   release per the Traxxas manual's LED sequence.
 - **Training mode** caps power at ~50%. Leave it on for first autonomy runs.
-- **Low-voltage detection** must be on with a LiPo pack (over-discharge ruins it). Only turn
-  it off for NiMH.
+- **Low-voltage detection:** stock pack is an 8.4 V 7-cell NiMH, so LVD **off**. NiMH tolerates
+  deep discharge and LVD's LiPo cutoff (~6 V) would trigger on sag under load. Turn it **on** if
+  the car ever moves to LiPo — over-discharge ruins those.
 
 ---
+
+## Firmware (M4)
+
+Pins, receiver-replacement wiring, the BNO055 driver and open firmware items: [firmware.md](firmware.md).
 
 ## M4 plan
 
 Order of work, each step testable on its own:
 
-1. Power harness (above), Pi running off the battery, `get_throttled` = `0x0`
+1. ~~Power harness (above), Pi running off the battery, `get_throttled` = `0x0`~~ ✓ 2026-10-17
 2. STM32: servo PWM, sweep steering
 3. STM32: ESC PWM, recalibrate the XL-5, wheels off the ground
 4. Traxxas RPM sensor → timer input capture → wheel speed
-5. BNO085 IMU over I2C
+5. ~~BNO055 IMU over I2C (own register-level driver in `firmware/lib/bno055/`, IMU mode)~~ ✓
+   driver + host unit tests done ([firmware.md](firmware.md))
 6. micro-ROS on the STM32: subscribe `/drive`, publish wheel speed + IMU
 7. `robot_localization` EKF fuses wheels + IMU → `odom → base_link`
 8. URDF from the measurements below (replaces the static transforms)
+
+Later (backlog):
+
+- **Battery monitoring.** INA226 (I2C voltage + current) on the battery side → STM32 →
+  `sensor_msgs/BatteryState` over micro-ROS; show it in RViz/Foxglove, low-battery warning.
+  Coulomb counting (integrate current) rather than voltage-to-percent — NiMH's discharge curve
+  is too flat for voltage alone to say much. Cheapest first step: resistor divider into an
+  STM32 ADC pin for voltage only.
 
 Parts:
 
 | Part | Status |
 |---|---|
-| Traxxas #6520 RPM sensor + #6540 mount | have |
-| 5 V / 6 A UBEC | to order |
-| BNO085 breakout | to order |
-| 1000 µF cap, connectors, fuse holder, wire | to order |
-| Soldering gear | at home, bringing it back |
+| Traxxas #6520 RPM sensor (long) + #6540 trigger magnet | have |
+| Adafruit BNO055 breakout | have, driver done |
+| Henge 8 A UBEC (5 V jumper) | installed |
+| TRX pigtails, male + female, 14 AWG (DEVMO) | installed (Y-harness) |
+| Inline blade fuse holder (18 AWG leads) + 5 A ATM fuse | installed |
+| 2 × 470 µF 25 V electrolytic (lab) | installed |
+| USB-C pigtail (20 AWG) | installed |
+| F-F jumper wires, M2.5/M3 standoffs | have |
+| Electronics plate v3, PETG | submitted to Atrium full serve (Prusa XL) |
+| M3 × 20 screws + M3 nyloc nuts (8 each), plate ↔ latch bars | to buy (kit only goes to M3 × 12) |
+| Drill + bits (1/8", 7/64", 1/16" pilot) | bought |
+| Banana-to-alligator leads (DP832 ↔ harness) | optional |
 
 ## Traxxas measurements
 
-For the URDF and converter parameters. `base_link` = center of the rear axle, on the ground.
+Truck: **Traxxas Slash 2WD HD w/USB-C** (clipless body mounts, Magnum 272 transmission).
+`base_link` = center of the rear axle, on the ground.
 
-- [ ] Wheelbase (front axle to rear axle)
-- [ ] Track width
-- [ ] Max steering angle (full lock)
-- [ ] Overall length and width (Nav2 footprint)
-- [ ] LiDAR mount offset from `base_link` (x, y, z) once mounted — level and rigid matter more
-      than millimeters
+From Traxxas specs:
+
+| | Value | Used in |
+|---|---|---|
+| Wheelbase | 335 mm | converter `wheelbase: 0.335` (sim used 0.3302), URDF |
+| Track (front = rear) | 296 mm | URDF |
+| Overall length × width | 568 × 296 mm | Nav2 footprint |
+| Transmission (spur → wheels) | 2.72 : 1 | RPM sensor → wheel speed |
+| Final drive (motor → wheels) | 9.05 : 1 | |
+| Weight | 2.16 kg | |
+| ESC power wire | 14 AWG | confirms 14 AWG for the harness main path |
+
+Wheel speed from the RPM sensor (magnet on the spur gear, one pulse per spur revolution):
+`v = (pulses/s ÷ 2.72) × π × tire_diameter`.
+
+Still to measure:
+
+- [ ] Max steering angle (full lock) → converter `max_steering`, min turning radius
+- [x] Tire diameter: 106.5 mm (unloaded; re-measure loaded on the floor if odometry scale is off)
+- [ ] Rear overhang: rear axle to rear bumper → footprint is **not** centered on
+      `base_link`; it spans roughly −rear_overhang … 568 − rear_overhang in X
+- [x] Body mount pads → plate (measured below)
+- [x] Latch bar screw pattern: 2 ears per latch, M3 (measured below)
+- [x] Plate vs tires at full steering lock: front strip clears (corner-test check)
+- [ ] RPLIDAR C1 base hole spacing + scan-window height; Nucleo hole pattern; Pi+case height
+- [ ] LiDAR and IMU offset from `base_link` once mounted (plate .scad prints offsets from plate
+      center; add the plate center's offset from the rear axle)
+
+### Measured: body mounts and clearances (for the plate)
+
+Car on its wheels on a flat table; ruler readings ±1–2 mm. Hole centers via
+(inside + outside) ÷ 2, measured at the top edge of each (tapered) latch hole.
+
+Latch-hole centers in plate coordinates (origin = midpoint of the four holes, +X forward,
++Y = car's left):
+
+| Hole | X | Y |
+|---|---|---|
+| Front-left | +157 | +60 |
+| Front-right | +157 | −60 |
+| Rear-left | −157 | +69 |
+| Rear-right | −157 | −69 |
+
+Front-to-rear 314 mm (left 314, right 313.5). Front pair 120 mm apart, rear pair 138 mm —
+a trapezoid, not a rectangle. Hole opening at the top ≈ 21 (X) × 15 (Y) mm, tapered (lead-in).
+
+Latch bars (stock body mounts; release is internal to the bar's latch):
+
+| | Front bar | Rear bar |
+|---|---|---|
+| Latch window (top, inside) | 22.58 (X) × 16.38 (Y) | — |
+| Screw ears per latch | 2: one toward the tire, one toward the **rear** | 2: one forward, one rearward, on the window's lengthwise center line |
+| Hole c-c | 23.40 (far-to-far 26.46 − 3.06) | 37.73 (far-to-far 40.79 − 3.06) |
+| Hole offsets from window center, left side (dX, dY out) | (0, +13), (−19.5, +6) — photo estimate | (±18.87, 0) |
+| Hole | 3.06 through, 6.46 counterbore on the **top** face (takes the body pad's 6.30 posts) | same |
+| Boss (ear) dia | 10.62 | — |
+
+The clamp faces down onto the tower. Screws go up from below, the same as stock.
+
+| Height above table | mm |
+|---|---|
+| Front tower pad top | 123 |
+| Rear tower pad top | 126 (the latch bars make up the difference) |
+| **Top of both latch bars** | **135, level front to rear** → plate end strips sit here, plate underside ≈ 137 |
+| Chassis floor | 80 |
+| Receiver box top | ~113 → ~24 mm under the plate |
+| Steering servo top | ~112 → ~25 mm |
+| ESC case top | ~110 → ~27 mm (route its leads/TRX plug flat) |
+| Antenna tube top | ~185, at X ≈ +31, Y ≈ +50. The plate has a 16 mm hole; remove the LiDAR's hits on it with a `laser_filters` box filter |
+| Tire diameter | 106.5 (width 60) |
+
+Design rule from this: ~22 mm free under the plate over the middle → 6 mm ribs leave plenty
+of room. All electronics go on top.
+
+Front tire clearance: checked with the front corner-test piece on the front-left latch, at full
+steering lock both ways with the suspension compressed by hand. The tire doesn't come close.
 
 ---
 [← README](../README.md)
