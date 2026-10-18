@@ -1,5 +1,5 @@
 CC      := gcc
-CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wno-error=unused-function -g
+CFLAGS  := -std=c11 -Wall -Wextra -Werror -g
 LDLIBS  := -lm
 
 SRCS    := test_bno055.c fake_i2c.c ../bno055.c
