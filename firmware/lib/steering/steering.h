@@ -27,9 +27,10 @@ typedef struct
     steering_cal_t cal;
     bool initialized;
     void *ctx;
+    uint32_t clamp_count;
 } steering_dev_t;
 
 steering_status_t steering_init(steering_dev_t *dev, const steering_cal_t *cal);
-steering_status_t steering_set_pulse_us(const steering_dev_t *dev, uint16_t pulse_us);
+steering_status_t steering_set_pulse_us(steering_dev_t *dev, uint16_t pulse_us);
 
 #endif

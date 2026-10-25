@@ -15,6 +15,7 @@ steering_status_t steering_init(steering_dev_t *dev, const steering_cal_t *cal)
 {
     if (!dev || !cal || !dev->write) return STEERING_ERR_PARAM;
     dev->initialized = false;
+    dev->clamp_count = 0;
 
     if (!pulse_in_range(cal->left_us) || !pulse_in_range(cal->center_us) ||
         !pulse_in_range(cal->right_us))
@@ -35,11 +36,26 @@ steering_status_t steering_init(steering_dev_t *dev, const steering_cal_t *cal)
     return STEERING_OK;
 }
 
-steering_status_t steering_set_pulse_us(const steering_dev_t *dev, uint16_t pulse_us)
+steering_status_t steering_set_pulse_us(steering_dev_t *dev, uint16_t pulse_us)
 {
     if (!dev) return STEERING_ERR_PARAM;
 
     if (!dev->initialized) return STEERING_ERR_NOT_INIT;
 
-    return STEERING_OK;
+    /* Determin the bounds*/
+    uint16_t lo = (dev->cal.left_us < dev->cal.right_us) ? dev->cal.left_us : dev->cal.right_us;
+    uint16_t hi = (dev->cal.left_us < dev->cal.right_us) ? dev->cal.right_us : dev->cal.left_us;
+
+    if (pulse_us < lo)
+    {
+        pulse_us = lo;
+        dev->clamp_count++;
+    }
+    else if (pulse_us > hi)
+    {
+        pulse_us = hi;
+        dev->clamp_count++;
+    }
+
+    return dev->write(dev->ctx, pulse_us);
 }
