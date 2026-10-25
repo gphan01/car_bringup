@@ -25,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "bno055_port.h"
+#include "steering_port.h"
 
 /* USER CODE END Includes */
 
@@ -47,6 +48,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+static uint16_t g_steer_us = 2500;
 
 /* USER CODE END PV */
 
@@ -94,12 +96,15 @@ int main(void)
     MX_TIM3_Init();
     /* USER CODE BEGIN 2 */
 
-    bno055_t dev = {0};
-    bno055_port_init(&dev, &hi2c1);
-    bno055_status_t st = bno055_init(&dev, NULL);
+    bno055_t bno055_dev = {0};
+    bno055_port_init(&bno055_dev, &hi2c1);
+    bno055_status_t imu_st = bno055_init(&bno055_dev, NULL);
 
-    /*Out the PWM*/
-    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+    steering_dev_t steer_dev = {0};
+    steering_cal_t steer_cal = {.left_us = 2000, .center_us = 1500, .right_us = 1000};
+    steering_status_t steer_st = steering_port_init(&steer_dev, &htim3);
+
+    if (steer_st == STEERING_OK) steer_st = steering_init(&steer_dev, &steer_cal);
 
     /* USER CODE END 2 */
 
@@ -117,9 +122,10 @@ int main(void)
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
+        steering_set_pulse_us(&steer_dev, g_steer_us);
         bno055_vec3_t accel, gyro;
-        bno055_read_accel(&dev, &accel);
-        bno055_read_gyro(&dev, &gyro);
+        bno055_read_accel(&bno055_dev, &accel);
+        bno055_read_gyro(&bno055_dev, &gyro);
         HAL_Delay(100);
     }
     /* USER CODE END 3 */
