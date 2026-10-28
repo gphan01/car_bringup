@@ -1,4 +1,5 @@
 #include "steering.h"
+#include <math.h>
 
 enum
 {
@@ -16,6 +17,8 @@ steering_status_t steering_init(steering_dev_t *dev, const steering_cal_t *cal)
     if (!dev || !cal || !dev->write) return STEERING_ERR_PARAM;
     dev->initialized = false;
     dev->clamp_count = 0;
+    dev->cal.max_left_rad = 0.40;
+    dev->cal.max_right_rad = 0.40;
 
     if (!pulse_in_range(cal->left_us) || !pulse_in_range(cal->center_us) ||
         !pulse_in_range(cal->right_us))
@@ -58,4 +61,45 @@ steering_status_t steering_set_pulse_us(steering_dev_t *dev, uint16_t pulse_us)
     }
 
     return dev->write(dev->ctx, pulse_us);
+}
+
+steering_status_t steering_set_angle(steering_dev_t *dev, float angle_rad)
+{
+    if (!dev) return STEERING_ERR_PARAM;
+
+    if (!dev->initialized) return STEERING_ERR_NOT_INIT;
+    if (!isfinite(angle_rad)) return STEERING_ERR_PARAM;
+
+    float max = (angle_rad >= 0.0f) ? dev->cal.max_left_rad : dev->cal.max_right_rad;
+
+    float cmd = angle_rad / max;
+
+    if (cmd > 1.0f)
+    {
+        cmd = 1.0f;
+        dev->clamp_count++;
+    }
+    else if (cmd < -1.0f)
+    {
+        cmd = -1.0f;
+        dev->clamp_count++;
+    }
+
+    float pulse_us = 0.0f;
+
+    uint16_t center = dev->cal.center_us;
+    uint16_t left = dev->cal.left_us;
+    uint16_t right = dev->cal.right_us;
+
+    if (cmd >= 0)
+    {
+        pulse_us = center + cmd * (left - center);
+    }
+    else
+    {
+        pulse_us = center + cmd * (center - right);
+    }
+    pulse_us = pulse_us + 0.5f;
+
+    return steering_set_pulse_us(dev, (uint16_t)pulse_us);
 }
