@@ -48,7 +48,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static uint16_t g_steer_us = 2500;
 
 /* USER CODE END PV */
 
@@ -107,6 +106,7 @@ int main(void)
     if (steer_st == STEERING_OK) steer_st = steering_init(&steer_dev, &steer_cal);
 
     /* USER CODE END 2 */
+    static uint16_t g_steer_us = 1500;
 
     /* Initialize leds */
     BSP_LED_Init(LED2);
