@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
+#include <math.h>
 
 typedef struct
 {
@@ -170,6 +171,57 @@ static void test_set_pulse_setter_clamps_both_orders(void)
     check_clamps((steering_cal_t){.left_us = 1100, .center_us = 1500, .right_us = 1900});
 }
 
+static void check_angle(float angle, uint16_t expect_us, uint32_t expect_clamps)
+{
+    fake_t f = {0};
+    steering_dev_t dev;
+    steering_cal_t cal = {.left_us = 1000,
+                          .center_us = 1500,
+                          .right_us = 2000,
+                          .max_left_rad = 0.40f,
+                          .max_right_rad = 0.40f};
+    make_dev(&dev, &f);
+    steering_status_t st = steering_init(&dev, &cal);
+    assert(st == STEERING_OK);
+    f = (fake_t){0};
+
+    st = steering_set_angle(&dev, angle);
+
+    assert(st == STEERING_OK);
+    assert(f.last_us == expect_us);
+    assert(dev.clamp_count == expect_clamps);
+}
+
+static void test_set_angle(void)
+{
+    check_angle(0.00f, 1500, 0);
+    check_angle(0.20f, 1250, 0);
+    check_angle(-0.20f, 1750, 0);
+    check_angle(0.40f, 1000, 0); /* exactly max: not a clamp */
+    check_angle(0.60f, 1000, 1); /* beyond max: saturates */
+    check_angle(-0.60f, 2000, 1);
+}
+
+static void test_set_angle_rejects_nan(void)
+{
+    fake_t f = {0};
+    steering_dev_t dev;
+    steering_cal_t cal = {.left_us = 1000,
+                          .center_us = 1500,
+                          .right_us = 2000,
+                          .max_left_rad = 0.40f,
+                          .max_right_rad = 0.40f};
+    make_dev(&dev, &f);
+    steering_status_t st = steering_init(&dev, &cal);
+    assert(st == STEERING_OK);
+    f = (fake_t){0};
+
+    st = steering_set_angle(&dev, NAN);
+
+    assert(st == STEERING_ERR_PARAM);
+    assert(f.calls == 0);
+}
+
 int main(void)
 {
     test_steering_init_rejects();
@@ -179,6 +231,8 @@ int main(void)
     test_steering_init_accepts_left_high();
     test_set_pulse_before_init();
     test_set_pulse_setter_clamps_both_orders();
+    test_set_angle();
+    test_set_angle_rejects_nan();
 
     printf("All tests passed.\n");
     return 0;
