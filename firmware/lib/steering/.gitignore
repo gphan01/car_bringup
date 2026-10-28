@@ -1,0 +1,4 @@
+test/test_steering
+*.o
+compile_commands.json
+.cache/
